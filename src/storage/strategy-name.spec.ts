@@ -1,18 +1,13 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import * as fs from 'fs';
-import * as path from 'path';
 
-const TEST_DB = path.resolve('./data/test-strategy.db');
-process.env.DB_PATH = TEST_DB;
-
-import { getDb, closeDb } from './db';
+import { getDb } from './db';
 import { insertTrade, TradeRecord } from './trades';
 import { insertDecision, DecisionRecord } from './decisions';
 
 function resetDb() {
-  closeDb();
-  if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
-  getDb();
+  const db = getDb();
+  db.exec('DELETE FROM trades');
+  db.exec('DELETE FROM decisions');
 }
 
 describe('strategy_name persistence', () => {
