@@ -1,6 +1,7 @@
 import { BinancePublicClient } from '../binance/public-client';
 import { BinancePrivateClient } from '../binance/private-client';
-import { ClaudeClient } from '../llm/claude-client';
+import { LlmDecider } from '../llm/types';
+import { createLlmDecider } from '../llm/factory';
 import { PromptContext } from '../llm/prompt';
 import { TradeExecutor, ExecutionMode, ExecutionResult } from '../executor/trade-executor';
 import { fetchSnapshot, emaPreFilter } from './market-data';
@@ -32,7 +33,7 @@ export interface SymbolResult {
 export class Orchestrator {
   private pub: BinancePublicClient;
   private priv: BinancePrivateClient | null;
-  private claude: ClaudeClient;
+  private claude: LlmDecider;
   private executor: TradeExecutor;
   private closer: TradeCloser;
   private fillSim: FillSimulator;
@@ -44,7 +45,7 @@ export class Orchestrator {
       mode === 'live'
         ? new BinancePrivateClient(config.binance.apiKey, config.binance.apiSecret)
         : null;
-    this.claude = new ClaudeClient();
+    this.claude = createLlmDecider();
     this.executor = new TradeExecutor(this.priv);
     this.closer = new TradeCloser(this.pub, this.priv);
     this.fillSim = new FillSimulator(this.pub, this.closer);
@@ -118,7 +119,7 @@ export class Orchestrator {
     try {
       llmResult = await this.claude.decide(snapshot, ctx);
     } catch (err: any) {
-      return { symbol, outcome: 'ERROR', reason: `Claude failed: ${err.message}` };
+      return { symbol, outcome: 'ERROR', reason: `LLM failed: ${err.message}` };
     }
 
     const decisionId = insertDecision({

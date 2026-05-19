@@ -3,21 +3,9 @@ import { config } from '../config/config';
 import { decideTradeTool, forceDecideTrade, DECIDE_TRADE_TOOL_NAME } from './tools';
 import { TradeDecision, TradeDecisionSchema } from './schema';
 import { buildSystemPrompt, buildUserPrompt, MarketSnapshot, PromptContext } from './prompt';
+import { DecisionUsage, DecisionResult, LlmDecider } from './types';
 
-export interface DecisionUsage {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadInputTokens: number;
-  cacheCreationInputTokens: number;
-  costUsd: number;
-}
-
-export interface DecisionResult {
-  decision: TradeDecision;
-  usage: DecisionUsage;
-  stopReason: string | null;
-  model: string;
-}
+export type { DecisionUsage, DecisionResult };
 
 const PRICING_PER_MTOKEN: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
   'claude-opus-4-7': { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
@@ -38,7 +26,7 @@ function estimateCostUsd(model: string, u: DecisionUsage): number {
   );
 }
 
-export class ClaudeClient {
+export class ClaudeClient implements LlmDecider {
   private sdk: Anthropic;
   private model: string;
   private effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';

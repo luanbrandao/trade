@@ -19,10 +19,21 @@ const ConfigSchema = z.object({
     apiKey: z.string().default(''),
     apiSecret: z.string().default(''),
   }),
+  llm: z.object({
+    provider: z.enum(['anthropic', 'openai', 'gemini']).default('anthropic'),
+  }),
   anthropic: z.object({
     apiKey: z.string().default(''),
     model: z.string().default('claude-opus-4-7'),
     effort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']).default('medium'),
+  }),
+  openai: z.object({
+    apiKey: z.string().default(''),
+    model: z.string().default('gpt-4o-mini'),
+  }),
+  gemini: z.object({
+    apiKey: z.string().default(''),
+    model: z.string().default('gemini-2.5-flash'),
   }),
   trading: z.object({
     mode: z.enum(['dryrun', 'live', 'backtest']).default('dryrun'),
@@ -75,10 +86,21 @@ function loadConfig(): Config {
       apiKey: process.env.BINANCE_API_KEY ?? '',
       apiSecret: process.env.BINANCE_API_SECRET ?? '',
     },
+    llm: {
+      provider: process.env.LLM_PROVIDER,
+    },
     anthropic: {
       apiKey: process.env.ANTHROPIC_API_KEY ?? '',
       model: process.env.CLAUDE_MODEL,
       effort: process.env.CLAUDE_EFFORT,
+    },
+    openai: {
+      apiKey: process.env.OPENAI_API_KEY ?? '',
+      model: process.env.OPENAI_MODEL,
+    },
+    gemini: {
+      apiKey: process.env.GEMINI_API_KEY ?? '',
+      model: process.env.GEMINI_MODEL,
     },
     trading: {
       mode: process.env.TRADE_MODE,

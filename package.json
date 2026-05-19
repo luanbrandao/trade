@@ -21,10 +21,12 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
+    "@google/genai": "^2.4.0",
     "axios": "^1.7.0",
     "better-sqlite3": "^11.3.0",
     "commander": "^12.1.0",
     "dotenv": "^16.4.0",
+    "openai": "^4.104.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {
