@@ -3,6 +3,7 @@ import { LlmDecider } from './types';
 import { ClaudeClient } from './claude-client';
 import { OpenAIClient } from './openai-client';
 import { GeminiClient } from './gemini-client';
+import { DeepSeekClient } from './deepseek-client';
 
 export function createLlmDecider(): LlmDecider {
   switch (config.llm.provider) {
@@ -12,5 +13,7 @@ export function createLlmDecider(): LlmDecider {
       return new OpenAIClient();
     case 'gemini':
       return new GeminiClient();
+    case 'deepseek':
+      return new DeepSeekClient();
   }
 }

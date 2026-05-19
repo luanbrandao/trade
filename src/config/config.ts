@@ -20,7 +20,7 @@ const ConfigSchema = z.object({
     apiSecret: z.string().default(''),
   }),
   llm: z.object({
-    provider: z.enum(['anthropic', 'openai', 'gemini']).default('anthropic'),
+    provider: z.enum(['anthropic', 'openai', 'gemini', 'deepseek']).default('anthropic'),
   }),
   anthropic: z.object({
     apiKey: z.string().default(''),
@@ -34,6 +34,11 @@ const ConfigSchema = z.object({
   gemini: z.object({
     apiKey: z.string().default(''),
     model: z.string().default('gemini-2.5-flash'),
+  }),
+  deepseek: z.object({
+    apiKey: z.string().default(''),
+    model: z.string().default('deepseek-chat'),
+    baseUrl: z.string().default('https://api.deepseek.com/v1'),
   }),
   trading: z.object({
     mode: z.enum(['dryrun', 'live', 'backtest']).default('dryrun'),
@@ -101,6 +106,11 @@ function loadConfig(): Config {
     gemini: {
       apiKey: process.env.GEMINI_API_KEY ?? '',
       model: process.env.GEMINI_MODEL,
+    },
+    deepseek: {
+      apiKey: process.env.DEEPSEEK_API_KEY ?? process.env.DEEPSEEK ?? '',
+      model: process.env.DEEPSEEK_MODEL,
+      baseUrl: process.env.DEEPSEEK_BASE_URL,
     },
     trading: {
       mode: process.env.TRADE_MODE,
