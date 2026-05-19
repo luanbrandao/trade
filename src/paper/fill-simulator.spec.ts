@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { simulateFill, FillCandidate } from './fill-simulator';
+import { simulateFill, checkLivePriceHit, FillCandidate } from './fill-simulator';
 import { Kline } from '../binance/types';
 
 function k(openTime: number, low: number, high: number): Kline {
@@ -92,5 +92,39 @@ describe('simulateFill', () => {
     const result = simulateFill(baseTrade, [noHit, tpHit], 1000);
     expect(result?.outcome).toBe('TP_HIT');
     expect(result?.closedTs).toBe(tpHit.closeTime);
+  });
+});
+
+describe('checkLivePriceHit', () => {
+  it('BUY: price >= TP → TP_HIT', () => {
+    const r = checkLivePriceHit('BUY', 61200, 59400, 61250);
+    expect(r?.outcome).toBe('TP_HIT');
+    expect(r?.exitPrice).toBe(61200);
+  });
+
+  it('BUY: price <= SL → SL_HIT', () => {
+    const r = checkLivePriceHit('BUY', 61200, 59400, 59000);
+    expect(r?.outcome).toBe('SL_HIT');
+    expect(r?.exitPrice).toBe(59400);
+  });
+
+  it('BUY: between SL and TP → null', () => {
+    expect(checkLivePriceHit('BUY', 61200, 59400, 60000)).toBeNull();
+  });
+
+  it('SELL: price <= TP → TP_HIT', () => {
+    const r = checkLivePriceHit('SELL', 58800, 60600, 58750);
+    expect(r?.outcome).toBe('TP_HIT');
+    expect(r?.exitPrice).toBe(58800);
+  });
+
+  it('SELL: price >= SL → SL_HIT', () => {
+    const r = checkLivePriceHit('SELL', 58800, 60600, 60700);
+    expect(r?.outcome).toBe('SL_HIT');
+    expect(r?.exitPrice).toBe(60600);
+  });
+
+  it('SELL: between TP and SL → null', () => {
+    expect(checkLivePriceHit('SELL', 58800, 60600, 59500)).toBeNull();
   });
 });

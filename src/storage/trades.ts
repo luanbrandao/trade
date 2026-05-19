@@ -57,18 +57,65 @@ export function closeTrade(
     .run(status, Date.now(), closedPrice, pnlQuote, pnlPct, id);
 }
 
+interface TradeRow {
+  id: number;
+  decision_id: number | null;
+  ts: number;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  qty: number;
+  avg_price: number;
+  quote_qty: number;
+  binance_order_id: string;
+  oco_order_list_id: string | null;
+  tp_price: number | null;
+  sl_price: number | null;
+  status: TradeStatus;
+  closed_ts: number | null;
+  closed_price: number | null;
+  pnl_quote: number | null;
+  pnl_pct: number | null;
+  mode: 'dryrun' | 'live' | 'backtest';
+  strategy_name: string;
+}
+
+function rowToRecord(r: TradeRow): TradeRecord {
+  return {
+    id: r.id,
+    decisionId: r.decision_id,
+    ts: r.ts,
+    symbol: r.symbol,
+    side: r.side,
+    qty: r.qty,
+    avgPrice: r.avg_price,
+    quoteQty: r.quote_qty,
+    binanceOrderId: r.binance_order_id,
+    ocoOrderListId: r.oco_order_list_id,
+    tpPrice: r.tp_price,
+    slPrice: r.sl_price,
+    status: r.status,
+    closedTs: r.closed_ts,
+    closedPrice: r.closed_price,
+    pnlQuote: r.pnl_quote,
+    pnlPct: r.pnl_pct,
+    mode: r.mode,
+    strategyName: r.strategy_name,
+  };
+}
+
 export function getOpenTrades(symbol?: string): TradeRecord[] {
   const db = getDb();
-  const rows = symbol
+  const rows = (symbol
     ? db.prepare('SELECT * FROM trades WHERE status = ? AND symbol = ?').all('OPEN', symbol)
-    : db.prepare('SELECT * FROM trades WHERE status = ?').all('OPEN');
-  return rows as unknown as TradeRecord[];
+    : db.prepare('SELECT * FROM trades WHERE status = ?').all('OPEN')) as TradeRow[];
+  return rows.map(rowToRecord);
 }
 
 export function getRecentTrades(limit = 50): TradeRecord[] {
-  return getDb()
+  const rows = getDb()
     .prepare('SELECT * FROM trades ORDER BY ts DESC LIMIT ?')
-    .all(limit) as unknown as TradeRecord[];
+    .all(limit) as TradeRow[];
+  return rows.map(rowToRecord);
 }
 
 export interface PnlSummary {

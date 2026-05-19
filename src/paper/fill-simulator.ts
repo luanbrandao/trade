@@ -72,8 +72,62 @@ export function simulateFill(
   return null;
 }
 
+export function checkLivePriceHit(
+  side: 'BUY' | 'SELL',
+  tpPrice: number,
+  slPrice: number,
+  currentPrice: number,
+): FillResult | null {
+  const isLong = side === 'BUY';
+  if (isLong) {
+    if (currentPrice >= tpPrice) return { outcome: 'TP_HIT', exitPrice: tpPrice, closedTs: Date.now() };
+    if (currentPrice <= slPrice) return { outcome: 'SL_HIT', exitPrice: slPrice, closedTs: Date.now() };
+  } else {
+    if (currentPrice <= tpPrice) return { outcome: 'TP_HIT', exitPrice: tpPrice, closedTs: Date.now() };
+    if (currentPrice >= slPrice) return { outcome: 'SL_HIT', exitPrice: slPrice, closedTs: Date.now() };
+  }
+  return null;
+}
+
 export class FillSimulator {
   constructor(private pub: BinancePublicClient, private closer: TradeCloser) {}
+
+  async checkLiveAndClose(): Promise<CloserResult> {
+    const open = getOpenTrades().filter((t) => t.mode === 'dryrun');
+    const result: CloserResult = { checked: open.length, closed: 0, errors: 0 };
+    if (open.length === 0) return result;
+
+    const symbols = Array.from(new Set(open.map((t) => t.symbol)));
+    const prices: Record<string, number> = {};
+    for (const sym of symbols) {
+      try {
+        prices[sym] = parseFloat((await this.pub.getPrice(sym)).price);
+      } catch (err: any) {
+        log.warn('Live price fetch failed', { symbol: sym, err: err.message });
+      }
+    }
+
+    for (const trade of open) {
+      if (!trade.id) continue;
+      if (postmortemExistsForTrade(trade.id)) continue;
+      if (trade.tpPrice == null || trade.slPrice == null) continue;
+      const price = prices[trade.symbol];
+      if (price == null) continue;
+
+      const hit = checkLivePriceHit(trade.side, trade.tpPrice, trade.slPrice, price);
+      if (!hit) continue;
+
+      try {
+        await this.closer.persistClose(trade, hit.exitPrice, hit.closedTs, hit.outcome, 'LIVE_PRICE_TICK');
+        result.closed += 1;
+      } catch (err: any) {
+        log.error('Live close error', { tradeId: trade.id, err: err.message });
+        result.errors += 1;
+      }
+    }
+
+    return result;
+  }
 
   async runDryrunFillSim(): Promise<CloserResult> {
     const open = getOpenTrades().filter((t) => t.mode === 'dryrun');
