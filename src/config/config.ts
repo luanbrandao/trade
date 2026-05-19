@@ -38,6 +38,10 @@ const ConfigSchema = z.object({
     symbols: csvList.default('BTCUSDT,ETHUSDT,SOLUSDT'),
     loopIntervalMinutes: z.coerce.number().min(1).default(15),
     understandRisks: boolFromYesNo.default('no'),
+    strategyName: z.string().min(1).default('ema9_21+claude_v1'),
+    maxDailyLossPct: z.coerce.number().min(0).max(100).default(3.0),
+    maxDailyLosses: z.coerce.number().int().min(1).default(3),
+    dryrunMaxHoldHours: z.coerce.number().min(1).default(168),
   }),
   storage: z.object({
     dbPath: z.string().default('./data/trade.db'),
@@ -90,6 +94,10 @@ function loadConfig(): Config {
       symbols: process.env.SYMBOLS,
       loopIntervalMinutes: process.env.LOOP_INTERVAL_MINUTES,
       understandRisks: process.env.I_UNDERSTAND_RISKS,
+      strategyName: process.env.STRATEGY_NAME,
+      maxDailyLossPct: process.env.MAX_DAILY_LOSS_PCT,
+      maxDailyLosses: process.env.MAX_DAILY_LOSSES,
+      dryrunMaxHoldHours: process.env.DRYRUN_MAX_HOLD_HOURS,
     },
     storage: {
       dbPath: process.env.DB_PATH,
