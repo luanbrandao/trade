@@ -17,6 +17,7 @@ export interface DecisionRecord {
   executed: boolean;
   skipReason: string | null;
   mode: 'dryrun' | 'live' | 'backtest';
+  strategyName: string;
 }
 
 export function insertDecision(d: DecisionRecord): number {
@@ -26,12 +27,12 @@ export function insertDecision(d: DecisionRecord): number {
       ts, symbol, action, confidence, reason,
       stop_loss_pct, take_profit_pct, time_horizon_minutes,
       price_at_decision, llm_model, llm_input_tokens, llm_output_tokens, llm_cost_usd,
-      executed, skip_reason, mode
+      executed, skip_reason, mode, strategy_name
     ) VALUES (
       @ts, @symbol, @action, @confidence, @reason,
       @stopLossPct, @takeProfitPct, @timeHorizonMinutes,
       @priceAtDecision, @llmModel, @llmInputTokens, @llmOutputTokens, @llmCostUsd,
-      @executed, @skipReason, @mode
+      @executed, @skipReason, @mode, @strategyName
     )
   `);
   const result = stmt.run({ ...d, executed: d.executed ? 1 : 0 });

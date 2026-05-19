@@ -118,6 +118,7 @@ export class TradeExecutor {
       pnlQuote: null,
       pnlPct: null,
       mode,
+      strategyName: config.trading.strategyName,
     };
     const tradeId = insertTrade(record);
     setCooldown(symbol);
@@ -219,6 +220,7 @@ export class TradeExecutor {
       pnlQuote: null,
       pnlPct: null,
       mode: 'live',
+      strategyName: config.trading.strategyName,
     };
     const tradeId = insertTrade(record);
     setCooldown(symbol);

@@ -117,6 +117,7 @@ export class Orchestrator {
       executed: false,
       skipReason: null,
       mode: this.mode,
+      strategyName: config.trading.strategyName,
     });
 
     if (llmResult.decision.action === 'HOLD') {

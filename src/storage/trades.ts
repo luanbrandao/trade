@@ -21,6 +21,7 @@ export interface TradeRecord {
   pnlQuote: number | null;
   pnlPct: number | null;
   mode: 'dryrun' | 'live' | 'backtest';
+  strategyName: string;
 }
 
 export function insertTrade(t: TradeRecord): number {
@@ -29,11 +30,11 @@ export function insertTrade(t: TradeRecord): number {
     INSERT INTO trades (
       decision_id, ts, symbol, side, qty, avg_price, quote_qty,
       binance_order_id, oco_order_list_id, tp_price, sl_price,
-      status, closed_ts, closed_price, pnl_quote, pnl_pct, mode
+      status, closed_ts, closed_price, pnl_quote, pnl_pct, mode, strategy_name
     ) VALUES (
       @decisionId, @ts, @symbol, @side, @qty, @avgPrice, @quoteQty,
       @binanceOrderId, @ocoOrderListId, @tpPrice, @slPrice,
-      @status, @closedTs, @closedPrice, @pnlQuote, @pnlPct, @mode
+      @status, @closedTs, @closedPrice, @pnlQuote, @pnlPct, @mode, @strategyName
     )
   `);
   const result = stmt.run(t);
