@@ -1,5 +1,6 @@
 import { EmaState } from '../indicators/ema';
 import { Kline, Ticker24hr } from '../binance/types';
+import { RegimeSnapshot } from '../strategy/regime';
 
 export interface MarketSnapshot {
   symbol: string;
@@ -7,6 +8,7 @@ export interface MarketSnapshot {
   ticker24h: Ticker24hr;
   klines1h: Kline[];
   ema: EmaState;
+  atr: number | null;
   topBids: [string, string][];
   topAsks: [string, string][];
 }
@@ -17,6 +19,7 @@ export interface PromptContext {
   cooldownMinutes: number;
   amountUsd: number;
   hasOpenPosition: boolean;
+  regime?: RegimeSnapshot;
 }
 
 export function buildSystemPrompt(ctx: PromptContext): string {
@@ -39,6 +42,14 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 - BUY only when: trend is up (EMA fast > slow, price above both), volume confirms, and you can articulate why this entry beats waiting.
 - SELL only when: clear breakdown of trend or technical target hit. Don't sell into strength without justification.
 
+# Macro regime context
+
+If a regime is provided, weight your decision accordingly:
+- RISK_ON: BTC in uptrend, fear&greed favoring greed. Long signals get full weight; tighter trailing.
+- RISK_OFF: BTC downtrend, fear dominant. Long signals require strong setup AND confluence; bias toward HOLD. Shorts/exits OK.
+- CHOPPY: No clear macro direction. Smaller positions, wider stops, lower confidence overall. Default toward HOLD unless setup is textbook.
+- UNKNOWN: Macro data missing — be slightly more conservative.
+
 # Output rules
 
 - Call decide_trade exactly once. No text response, no other tool calls.
@@ -46,6 +57,18 @@ export function buildSystemPrompt(ctx: PromptContext): string {
 - keyRisks: name the specific levels/events that would invalidate the thesis (e.g. "loss of 67500 EMA21 support", "BTC dump > 2% in 1h").
 
 You operate inside an automated trading system. Your decisions execute real orders. Be precise. Be skeptical. When in doubt: HOLD.`;
+}
+
+function regimeBlock(ctx: PromptContext): string {
+  if (!ctx.regime) return '## Macro regime\n- not provided';
+  const r = ctx.regime;
+  const fg =
+    r.fearGreedIndex !== null ? `${r.fearGreedIndex} (${r.fearGreedLabel ?? 'n/a'})` : 'n/a';
+  return `## Macro regime
+- Regime: ${r.regime}
+- BTC trend: ${r.btcTrend}  (EMA50 slope ${r.btcEma50Slope.toFixed(2)}%/5d, 30d change ${r.btcChange30dPct.toFixed(2)}%)
+- Fear & Greed: ${fg}
+- Source: ${r.source}`;
 }
 
 export function buildUserPrompt(snap: MarketSnapshot, ctx: PromptContext): string {
@@ -84,12 +107,18 @@ Has open position: ${ctx.hasOpenPosition ? 'YES (BUY blocked)' : 'NO'}
 - Cross signal: ${snap.ema.cross}
 - Trend: ${snap.ema.trend}
 
+## ATR(14) on 1h
+- ATR: ${snap.atr !== null ? snap.atr.toFixed(4) : 'n/a'}
+- ATR as % of price: ${snap.atr !== null ? ((snap.atr / snap.currentPrice) * 100).toFixed(2) + '%' : 'n/a'}
+
 ## Last 24 hourly candles
 ${klineLines}
 
 ## Top of book
 - Bids: ${bidsStr}
 - Asks: ${asksStr}
+
+${regimeBlock(ctx)}
 
 Make your decision now. Remember: default HOLD, R/R >= ${ctx.minRrRatio}:1 hard floor, confidence >= ${ctx.minConfidence}% to act.`;
 }

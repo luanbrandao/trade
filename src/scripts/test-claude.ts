@@ -1,5 +1,6 @@
 import { BinancePublicClient } from '../binance/public-client';
 import { emaState } from '../indicators/ema';
+import { atr } from '../indicators/atr';
 import { ClaudeClient } from '../llm/claude-client';
 import { MarketSnapshot, PromptContext } from '../llm/prompt';
 import { config } from '../config/config';
@@ -25,6 +26,7 @@ async function main() {
     ticker24h: ticker,
     klines1h: klines,
     ema,
+    atr: atr(klines, 14),
     topBids: book.bids.slice(0, 5),
     topAsks: book.asks.slice(0, 5),
   };

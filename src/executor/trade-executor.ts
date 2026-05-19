@@ -8,8 +8,10 @@ import {
   validateMinNotional,
   validateRrFloor,
 } from './risk-manager';
-import { insertTrade, TradeRecord, TradeStatus } from '../storage/trades';
+import { insertTrade, getOpenTrades, TradeRecord, TradeStatus } from '../storage/trades';
 import { setCooldown } from '../storage/cooldowns';
+import { sizePosition, checkHeatCap, SizingMode } from './position-sizer';
+import { config } from '../config/config';
 
 export type ExecutionMode = 'dryrun' | 'live' | 'backtest';
 
@@ -18,9 +20,9 @@ export interface ExecutionInput {
   decision: TradeDecision;
   decisionId: number;
   currentPrice: number;
-  amountUsd: number;
   minRrRatio: number;
   mode: ExecutionMode;
+  atrAbsolute?: number;
 }
 
 export interface ExecutionResult {
@@ -29,13 +31,15 @@ export interface ExecutionResult {
   tradeId?: number;
   ocoOrderListId?: string;
   binanceOrderId?: string;
+  sizingRationale?: string;
+  riskDollars?: number;
 }
 
 export class TradeExecutor {
-  constructor(private priv: BinancePrivateClient) {}
+  constructor(private priv: BinancePrivateClient | null) {}
 
   async execute(input: ExecutionInput): Promise<ExecutionResult> {
-    const { decision, symbol } = input;
+    const { decision } = input;
 
     if (decision.action === 'HOLD') {
       return { status: 'SKIPPED', reason: 'HOLD decision' };
@@ -47,17 +51,50 @@ export class TradeExecutor {
       return { status: 'SKIPPED', reason: rrCheck.reason };
     }
 
-    if (input.mode === 'dryrun' || input.mode === 'backtest') {
-      return this.executeSimulated(input);
+    const sizing = sizePosition({
+      mode: config.trading.sizingMode as SizingMode,
+      accountEquityUsd: config.trading.accountEquityUsd,
+      fixedAmountUsd: config.trading.amountUsd,
+      riskPctPerTrade: config.trading.riskPctPerTrade,
+      entryPrice: input.currentPrice,
+      stopLossPercent: decision.stopLossPercent,
+      atrAbsolute: input.atrAbsolute,
+      atrMultiplier: config.trading.atrMultiplier,
+    });
+
+    if (sizing.quoteQty > config.trading.amountUsd && config.trading.sizingMode !== 'fixed') {
+      sizing.quoteQty = config.trading.amountUsd;
+      sizing.baseQty = sizing.quoteQty / input.currentPrice;
+      sizing.rationale += ` (capped by TRADE_AMOUNT_USD=$${config.trading.amountUsd})`;
     }
 
-    return this.executeLive(input);
+    const openTrades = getOpenTrades();
+    const heatCheck = checkHeatCap(
+      sizing.riskDollars,
+      openTrades,
+      config.trading.accountEquityUsd,
+      config.trading.maxPortfolioHeatPct,
+    );
+    if (!heatCheck.ok) {
+      return { status: 'SKIPPED', reason: heatCheck.reason };
+    }
+
+    if (input.mode === 'dryrun' || input.mode === 'backtest') {
+      return this.executeSimulated(input, sizing.quoteQty, sizing.riskDollars, sizing.rationale);
+    }
+
+    return this.executeLive(input, sizing.quoteQty, sizing.riskDollars, sizing.rationale);
   }
 
-  private executeSimulated(input: ExecutionInput): ExecutionResult {
-    const { decision, symbol, currentPrice, amountUsd, mode, decisionId } = input;
+  private executeSimulated(
+    input: ExecutionInput,
+    quoteQty: number,
+    riskDollars: number,
+    rationale: string,
+  ): ExecutionResult {
+    const { decision, symbol, currentPrice, mode, decisionId } = input;
     const side = decision.action as 'BUY' | 'SELL';
-    const qty = amountUsd / currentPrice;
+    const qty = quoteQty / currentPrice;
 
     const isLong = side === 'BUY';
     const tpPrice = currentPrice * (1 + (isLong ? decision.takeProfitPercent : -decision.takeProfitPercent) / 100);
@@ -70,7 +107,7 @@ export class TradeExecutor {
       side,
       qty,
       avgPrice: currentPrice,
-      quoteQty: amountUsd,
+      quoteQty,
       binanceOrderId: `SIM-${Date.now()}`,
       ocoOrderListId: null,
       tpPrice,
@@ -89,28 +126,39 @@ export class TradeExecutor {
       status: 'EXECUTED',
       tradeId,
       binanceOrderId: record.binanceOrderId,
+      sizingRationale: rationale,
+      riskDollars,
     };
   }
 
-  private async executeLive(input: ExecutionInput): Promise<ExecutionResult> {
-    const { decision, symbol, amountUsd, decisionId } = input;
+  private async executeLive(
+    input: ExecutionInput,
+    quoteQty: number,
+    riskDollars: number,
+    rationale: string,
+  ): Promise<ExecutionResult> {
+    if (!this.priv) {
+      return { status: 'ERROR', reason: 'Live mode requires private client (Binance keys)' };
+    }
+    const priv = this.priv;
+    const { decision, symbol, decisionId } = input;
     const side = decision.action as 'BUY' | 'SELL';
 
-    const filters = await this.priv.getSymbolFilters(symbol);
+    const filters = await priv.getSymbolFilters(symbol);
 
-    const notionalCheck = validateMinNotional(amountUsd, filters);
+    const notionalCheck = validateMinNotional(quoteQty, filters);
     if (!notionalCheck.ok) {
       return { status: 'SKIPPED', reason: notionalCheck.reason };
     }
 
-    const balanceCheck = await this.checkBalance(side, symbol, amountUsd, input.currentPrice, filters);
+    const balanceCheck = await this.checkBalance(side, symbol, quoteQty, input.currentPrice, filters);
     if (!balanceCheck.ok) {
       return { status: 'SKIPPED', reason: balanceCheck.reason };
     }
 
     let order;
     try {
-      order = await this.priv.createMarketOrder(symbol, side, amountUsd);
+      order = await priv.createMarketOrder(symbol, side, quoteQty);
     } catch (err: any) {
       const msg = err.response?.data?.msg ?? err.message;
       return { status: 'ERROR', reason: `MARKET order failed: ${msg}` };
@@ -128,7 +176,7 @@ export class TradeExecutor {
 
     let ocoOrderListId: string | null = null;
     try {
-      const oco = await this.priv.createOCOOrder(
+      const oco = await priv.createOCOOrder(
         symbol,
         closingSide,
         parseFloat(formatToStep(closingQty, filters.stepSize || 0.0001)),
@@ -141,7 +189,7 @@ export class TradeExecutor {
       const msg = err.response?.data?.msg ?? err.message;
       console.warn(`OCO failed (${msg}) — falling back to LIMIT TP only`);
       try {
-        await this.priv.createLimitOrder(
+        await priv.createLimitOrder(
           symbol,
           closingSide,
           parseFloat(formatToStep(closingQty, filters.stepSize || 0.0001)),
@@ -180,6 +228,8 @@ export class TradeExecutor {
       tradeId,
       binanceOrderId: String(order.orderId),
       ocoOrderListId: ocoOrderListId ?? undefined,
+      sizingRationale: rationale,
+      riskDollars,
     };
   }
 
@@ -190,6 +240,7 @@ export class TradeExecutor {
     currentPrice: number,
     filters: SymbolFilters,
   ): Promise<{ ok: boolean; reason?: string }> {
+    if (!this.priv) return { ok: false, reason: 'private client unavailable' };
     if (side === 'BUY') {
       const { free } = await this.priv.getBalance(filters.quoteAsset);
       if (free < amountUsd) {

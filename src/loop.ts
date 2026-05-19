@@ -54,6 +54,16 @@ export class TradingLoop {
     log.info('Cycle start', { cycle: cycleId });
 
     try {
+      const closeResult = await this.orch.closeMatured();
+      if (closeResult.closed > 0 || closeResult.errors > 0) {
+        log.info('Postmortem', {
+          cycle: cycleId,
+          checked: closeResult.checked,
+          closed: closeResult.closed,
+          errors: closeResult.errors,
+        });
+      }
+
       const results = await this.orch.runAll(this.opts.symbols);
       this.logResults(cycleId, results);
     } catch (err: any) {

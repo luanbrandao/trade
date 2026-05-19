@@ -27,6 +27,11 @@ const ConfigSchema = z.object({
   trading: z.object({
     mode: z.enum(['dryrun', 'live', 'backtest']).default('dryrun'),
     amountUsd: z.coerce.number().positive().max(MAX_TRADE_AMOUNT_USD).default(50),
+    sizingMode: z.enum(['fixed', 'risk', 'atr']).default('fixed'),
+    riskPctPerTrade: z.coerce.number().min(0.1).max(5).default(1),
+    accountEquityUsd: z.coerce.number().positive().default(1000),
+    atrMultiplier: z.coerce.number().min(0.5).max(10).default(2),
+    maxPortfolioHeatPct: z.coerce.number().min(0).max(50).default(6),
     minConfidence: z.coerce.number().min(0).max(100).default(70),
     minRrRatio: z.coerce.number().min(1).default(2),
     cooldownMinutes: z.coerce.number().min(0).default(30),
@@ -74,6 +79,11 @@ function loadConfig(): Config {
     trading: {
       mode: process.env.TRADE_MODE,
       amountUsd: process.env.TRADE_AMOUNT_USD,
+      sizingMode: process.env.SIZING_MODE,
+      riskPctPerTrade: process.env.RISK_PCT_PER_TRADE,
+      accountEquityUsd: process.env.ACCOUNT_EQUITY_USD,
+      atrMultiplier: process.env.ATR_MULTIPLIER,
+      maxPortfolioHeatPct: process.env.MAX_PORTFOLIO_HEAT_PCT,
       minConfidence: process.env.MIN_CONFIDENCE,
       minRrRatio: process.env.MIN_RR_RATIO,
       cooldownMinutes: process.env.COOLDOWN_MINUTES,

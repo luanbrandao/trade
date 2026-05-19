@@ -53,6 +53,21 @@ const MIGRATIONS = [
     symbol TEXT PRIMARY KEY,
     last_trade_ts INTEGER NOT NULL
   )`,
+
+  `CREATE TABLE IF NOT EXISTS postmortems (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trade_id INTEGER NOT NULL REFERENCES trades(id),
+    closed_ts INTEGER NOT NULL,
+    outcome TEXT NOT NULL CHECK (outcome IN ('TP_HIT','SL_HIT','TIMEOUT','MANUAL','REGIME_MISMATCH')),
+    pnl_quote REAL NOT NULL,
+    pnl_pct REAL NOT NULL,
+    holding_minutes INTEGER NOT NULL,
+    mae_pct REAL,
+    mfe_pct REAL,
+    classification TEXT NOT NULL CHECK (classification IN ('TRUE_POSITIVE','FALSE_POSITIVE','TIMEOUT_WIN','TIMEOUT_LOSS')),
+    notes TEXT
+  )`,
+  `CREATE INDEX IF NOT EXISTS idx_postmortems_trade ON postmortems(trade_id)`,
 ];
 
 let dbInstance: Database.Database | null = null;

@@ -1,6 +1,7 @@
 import { BinancePublicClient, KlineInterval } from '../binance/public-client';
 import { Kline, Ticker24hr } from '../binance/types';
 import { emaState } from '../indicators/ema';
+import { atr } from '../indicators/atr';
 import { MarketSnapshot, PromptContext } from '../llm/prompt';
 import { TradeDecision } from '../llm/schema';
 import { ClaudeClient } from '../llm/claude-client';
@@ -22,6 +23,7 @@ export interface BacktestOptions {
   minRrRatio: number;
   cooldownMinutes: number;
   warmupCandles: number;
+  slippagePct: number;
 }
 
 export interface SimulatedTrade {
@@ -127,29 +129,41 @@ function simulateFill(
   tpPercent: number,
   slPercent: number,
   timeHorizonMs: number,
+  slippagePct: number,
 ): { exitIdx: number; exitPrice: number; outcome: 'TP' | 'SL' | 'TIMEOUT' } {
   const isLong = side === 'BUY';
   const tpPrice = entryPrice * (1 + (isLong ? tpPercent : -tpPercent) / 100);
   const slPrice = entryPrice * (1 + (isLong ? -slPercent : slPercent) / 100);
   const entryTs = klines[entryIdx].openTime;
   const deadlineTs = entryTs + timeHorizonMs;
+  const exitSlipFrac = slippagePct / 100;
 
   for (let i = entryIdx + 1; i < klines.length; i++) {
     const k = klines[i];
     if (k.openTime > deadlineTs) {
-      return { exitIdx: i, exitPrice: k.open, outcome: 'TIMEOUT' };
+      const fill = isLong ? k.open * (1 - exitSlipFrac) : k.open * (1 + exitSlipFrac);
+      return { exitIdx: i, exitPrice: fill, outcome: 'TIMEOUT' };
     }
     if (isLong) {
-      if (k.low <= slPrice) return { exitIdx: i, exitPrice: slPrice, outcome: 'SL' };
-      if (k.high >= tpPrice) return { exitIdx: i, exitPrice: tpPrice, outcome: 'TP' };
+      if (k.low <= slPrice) {
+        return { exitIdx: i, exitPrice: slPrice * (1 - exitSlipFrac), outcome: 'SL' };
+      }
+      if (k.high >= tpPrice) {
+        return { exitIdx: i, exitPrice: tpPrice * (1 - exitSlipFrac), outcome: 'TP' };
+      }
     } else {
-      if (k.high >= slPrice) return { exitIdx: i, exitPrice: slPrice, outcome: 'SL' };
-      if (k.low <= tpPrice) return { exitIdx: i, exitPrice: tpPrice, outcome: 'TP' };
+      if (k.high >= slPrice) {
+        return { exitIdx: i, exitPrice: slPrice * (1 + exitSlipFrac), outcome: 'SL' };
+      }
+      if (k.low <= tpPrice) {
+        return { exitIdx: i, exitPrice: tpPrice * (1 + exitSlipFrac), outcome: 'TP' };
+      }
     }
   }
 
   const last = klines[klines.length - 1];
-  return { exitIdx: klines.length - 1, exitPrice: last.close, outcome: 'TIMEOUT' };
+  const fallback = isLong ? last.close * (1 - exitSlipFrac) : last.close * (1 + exitSlipFrac);
+  return { exitIdx: klines.length - 1, exitPrice: fallback, outcome: 'TIMEOUT' };
 }
 
 export async function runBacktest(opts: BacktestOptions): Promise<BacktestResult> {
@@ -200,6 +214,7 @@ export async function runBacktest(opts: BacktestOptions): Promise<BacktestResult
       ticker24h: syntheticTicker(opts.symbol, window24),
       klines1h: window24,
       ema,
+      atr: atr(window, 14),
       topBids: [[candle.close.toString(), '1']],
       topAsks: [[candle.close.toString(), '1']],
     };
@@ -234,7 +249,8 @@ export async function runBacktest(opts: BacktestOptions): Promise<BacktestResult
     if (rr < opts.minRrRatio) continue;
 
     const entryIdx = i + 1;
-    const entryPrice = klines[entryIdx].open;
+    const rawEntry = klines[entryIdx].open;
+    const entryPrice = rawEntry * (1 + opts.slippagePct / 100);
     const qty = opts.amountUsd / entryPrice;
     const timeHorizonMs = decision.timeHorizonMinutes * 60_000;
 
@@ -246,6 +262,7 @@ export async function runBacktest(opts: BacktestOptions): Promise<BacktestResult
       decision.takeProfitPercent,
       decision.stopLossPercent,
       timeHorizonMs,
+      opts.slippagePct,
     );
 
     const pnlQuote = (fill.exitPrice - entryPrice) * qty;

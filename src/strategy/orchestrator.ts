@@ -8,6 +8,9 @@ import { config } from '../config/config';
 import { insertDecision, markDecisionExecuted, markDecisionSkipped } from '../storage/decisions';
 import { isInCooldown, remainingCooldownMinutes } from '../storage/cooldowns';
 import { getOpenTrades } from '../storage/trades';
+import { TradeCloser, CloserResult } from '../postmortem/closer';
+import { log } from '../logger';
+import { detectRegime, RegimeSnapshot } from './regime';
 
 export interface SymbolResult {
   symbol: string;
@@ -20,17 +23,29 @@ export interface SymbolResult {
 
 export class Orchestrator {
   private pub: BinancePublicClient;
-  private priv: BinancePrivateClient;
+  private priv: BinancePrivateClient | null;
   private claude: ClaudeClient;
   private executor: TradeExecutor;
+  private closer: TradeCloser;
   private mode: ExecutionMode;
 
   constructor(mode: ExecutionMode) {
     this.pub = new BinancePublicClient();
-    this.priv = new BinancePrivateClient(config.binance.apiKey, config.binance.apiSecret);
+    this.priv =
+      mode === 'live'
+        ? new BinancePrivateClient(config.binance.apiKey, config.binance.apiSecret)
+        : null;
     this.claude = new ClaudeClient();
     this.executor = new TradeExecutor(this.priv);
+    this.closer = new TradeCloser(this.pub, this.priv);
     this.mode = mode;
+  }
+
+  async closeMatured(): Promise<CloserResult> {
+    if (this.mode === 'live') {
+      return this.closer.runLive();
+    }
+    return this.closer.runDryrunTimeout();
   }
 
   async runSymbol(symbol: string): Promise<SymbolResult> {
@@ -62,12 +77,20 @@ export class Orchestrator {
       };
     }
 
+    let regime: RegimeSnapshot | undefined;
+    try {
+      regime = await detectRegime(this.pub);
+    } catch (err: any) {
+      log.warn('Regime fetch failed', { err: err.message });
+    }
+
     const ctx: PromptContext = {
       minConfidence: config.trading.minConfidence,
       minRrRatio: config.trading.minRrRatio,
       cooldownMinutes: config.trading.cooldownMinutes,
       amountUsd: config.trading.amountUsd,
       hasOpenPosition,
+      regime,
     };
 
     let llmResult;
@@ -123,9 +146,9 @@ export class Orchestrator {
       decision: llmResult.decision,
       decisionId,
       currentPrice: snapshot.currentPrice,
-      amountUsd: config.trading.amountUsd,
       minRrRatio: config.trading.minRrRatio,
       mode: this.mode,
+      atrAbsolute: snapshot.atr ?? undefined,
     });
 
     if (execResult.status === 'EXECUTED') {

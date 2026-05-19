@@ -1,5 +1,6 @@
 import { BinancePublicClient, KlineInterval } from '../binance/public-client';
 import { emaState } from '../indicators/ema';
+import { atr } from '../indicators/atr';
 import { MarketSnapshot } from '../llm/prompt';
 
 export interface FetchOptions {
@@ -35,12 +36,15 @@ export async function fetchSnapshot(
     throw new Error(`Insufficient klines for EMA on ${symbol}: got ${closes.length}, need ${opts.emaSlow + 1}`);
   }
 
+  const atrValue = atr(klines, 14);
+
   return {
     symbol,
     currentPrice: closes[closes.length - 1],
     ticker24h: ticker,
     klines1h: klines,
     ema,
+    atr: atrValue,
     topBids: book.bids.slice(0, 5),
     topAsks: book.asks.slice(0, 5),
   };

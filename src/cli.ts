@@ -4,7 +4,11 @@ import { TradingLoop, runOnce } from './loop';
 import { log } from './logger';
 import { getOpenTrades, getPnlSummary } from './storage/trades';
 import { getRecentDecisions } from './storage/decisions';
+import { getRecentPostmortems } from './storage/postmortems';
 import { closeDb } from './storage/db';
+import { BinancePublicClient } from './binance/public-client';
+import { BinancePrivateClient } from './binance/private-client';
+import { TradeCloser } from './postmortem/closer';
 import { runBacktest, LlmMode } from './backtest/engine';
 import { computeMetrics, formatMetrics } from './backtest/metrics';
 import { KlineInterval } from './binance/public-client';
@@ -109,7 +113,42 @@ program
       );
     }
 
+    console.log('\n=== Recent Postmortems (last 10) ===');
+    const pms = getRecentPostmortems(10);
+    if (pms.length === 0) console.log('  (none)');
+    for (const p of pms) {
+      const ts = new Date((p as any).closed_ts).toISOString().slice(0, 19).replace('T', ' ');
+      console.log(
+        `  [${ts}] trade=${(p as any).trade_id} ${(p as any).outcome} pnl=${(p as any).pnl_pct?.toFixed(2)}% hold=${(p as any).holding_minutes?.toFixed(0)}min MAE=${(p as any).mae_pct?.toFixed(2) ?? '-'} MFE=${(p as any).mfe_pct?.toFixed(2) ?? '-'} class=${(p as any).classification}`,
+      );
+    }
+
     closeDb();
+  });
+
+program
+  .command('close-trades')
+  .description('Run postmortem closer once: detect filled OCOs, close trades, record outcomes')
+  .option('--mode <mode>', 'live | dryrun', 'live')
+  .option('--max-age-hours <n>', 'For dryrun: close trades older than N hours', '48')
+  .action(async (opts) => {
+    if (opts.mode !== 'live' && opts.mode !== 'dryrun') {
+      log.error('Invalid --mode', { mode: opts.mode });
+      process.exit(1);
+    }
+    const pub = new BinancePublicClient();
+    const priv =
+      opts.mode === 'live'
+        ? new BinancePrivateClient(config.binance.apiKey, config.binance.apiSecret)
+        : null;
+    const closer = new TradeCloser(pub, priv);
+    const result =
+      opts.mode === 'live'
+        ? await closer.runLive()
+        : await closer.runDryrunTimeout(parseInt(opts.maxAgeHours, 10));
+    log.info('Closer done', { checked: result.checked, closed: result.closed, errors: result.errors });
+    closeDb();
+    process.exit(0);
   });
 
 program
@@ -170,6 +209,7 @@ program
   .option('--ema-fast <n>', 'fast EMA period', '9')
   .option('--ema-slow <n>', 'slow EMA period', '21')
   .option('--warmup <n>', 'warmup candles before trading', '50')
+  .option('--slippage <pct>', 'per-side slippage % (entry + exit). Recommend 0.05-0.1', '0.05')
   .action(async (opts) => {
     if (opts.llm !== 'mock' && opts.llm !== 'claude') {
       log.error('Invalid --llm', { llm: opts.llm });
@@ -186,6 +226,8 @@ program
       process.exit(1);
     }
 
+    const slippagePct = parseFloat(opts.slippage);
+
     try {
       const result = await runBacktest({
         symbol: opts.symbol,
@@ -200,12 +242,14 @@ program
         minRrRatio: config.trading.minRrRatio,
         cooldownMinutes: config.trading.cooldownMinutes,
         warmupCandles: parseInt(opts.warmup, 10),
+        slippagePct,
       });
 
-      const metrics = computeMetrics(result.trades);
+      const metrics = computeMetrics(result.trades, { slippageTested: slippagePct > 0 });
       console.log(formatMetrics(metrics, result.symbol));
       console.log(`\nCandles processed: ${result.totalCandles}`);
       console.log(`Decisions made: ${result.decisionsTotal}  Executed: ${result.decisionsExecuted}`);
+      console.log(`Slippage modeled: ${slippagePct}% per side`);
       if (opts.llm === 'claude') {
         console.log(`LLM cost: $${result.totalLlmCostUsd.toFixed(4)}`);
       }
@@ -214,6 +258,65 @@ program
       log.error('Backtest failed', { err: err.message });
       process.exit(1);
     }
+  });
+
+program
+  .command('sweep')
+  .description('Run backtest across parameter range — find plateaus, not peaks')
+  .requiredOption('--symbol <symbol>', 'e.g. BTCUSDT')
+  .requiredOption('--from <date>', 'YYYY-MM-DD')
+  .requiredOption('--to <date>', 'YYYY-MM-DD')
+  .requiredOption('--param <name>', 'ema-fast | ema-slow | slippage')
+  .requiredOption('--values <csv>', 'comma-separated values, e.g. 5,7,9,11,14')
+  .option('--llm <mode>', 'mock | claude', 'mock')
+  .option('--interval <interval>', '1h|4h|1d', '1h')
+  .option('--warmup <n>', 'warmup candles', '50')
+  .action(async (opts) => {
+    const from = new Date(opts.from);
+    const to = new Date(opts.to);
+    const values = opts.values.split(',').map((v: string) => parseFloat(v.trim()));
+    const llmMode = opts.llm as LlmMode;
+
+    console.log(`Sweep: ${opts.param} = [${values.join(', ')}]  on ${opts.symbol}`);
+    console.log('value\ttrades\twin%\tpnl%\tpf\tmdd%\tverdict');
+
+    for (const v of values) {
+      const baseOpts = {
+        symbol: opts.symbol,
+        interval: opts.interval as KlineInterval,
+        from,
+        to,
+        llmMode,
+        emaFast: 9,
+        emaSlow: 21,
+        amountUsd: config.trading.amountUsd,
+        minConfidence: config.trading.minConfidence,
+        minRrRatio: config.trading.minRrRatio,
+        cooldownMinutes: config.trading.cooldownMinutes,
+        warmupCandles: parseInt(opts.warmup, 10),
+        slippagePct: 0.05,
+      };
+
+      if (opts.param === 'ema-fast') baseOpts.emaFast = v;
+      else if (opts.param === 'ema-slow') baseOpts.emaSlow = v;
+      else if (opts.param === 'slippage') baseOpts.slippagePct = v;
+      else {
+        log.error('Invalid --param', { param: opts.param });
+        process.exit(1);
+      }
+
+      try {
+        const result = await runBacktest(baseOpts);
+        const m = computeMetrics(result.trades, { slippageTested: baseOpts.slippagePct > 0 });
+        const pf = m.profitFactor === Infinity ? '∞' : m.profitFactor.toFixed(2);
+        console.log(
+          `${v}\t${m.trades}\t${(m.winRate * 100).toFixed(1)}\t${m.totalPnlPct.toFixed(2)}\t${pf}\t${m.maxDrawdownPct.toFixed(1)}\t${m.verdict.verdict}`,
+        );
+      } catch (err: any) {
+        console.log(`${v}\tERROR: ${err.message}`);
+      }
+    }
+    process.exit(0);
   });
 
 program.parseAsync().catch((err) => {
