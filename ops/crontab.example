@@ -1,0 +1,16 @@
+# trade bot — single-cycle cron mode (alternative to systemd loop)
+# Runs `trade once` every 15 min. Locks via flock to prevent overlap.
+# Edit with: crontab -e
+
+# Path to project (absolute)
+TRADE_DIR=/opt/trade
+NODE_BIN=/usr/bin/node
+
+# Every 15 min: run one cycle in dryrun
+*/15 * * * * cd $TRADE_DIR && flock -n /tmp/trade.lock $NODE_BIN node_modules/ts-node/dist/bin.js src/cli.ts once --mode dryrun >> $TRADE_DIR/logs/cron.log 2>&1
+
+# Every hour at :05 — log status snapshot
+5 * * * * cd $TRADE_DIR && $NODE_BIN node_modules/ts-node/dist/bin.js src/cli.ts status >> $TRADE_DIR/logs/status.log 2>&1
+
+# Daily 00:10 UTC — rotate logs (keep 7 days)
+10 0 * * * find $TRADE_DIR/logs -name '*.log' -mtime +7 -delete

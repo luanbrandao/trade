@@ -1,0 +1,38 @@
+{
+  "name": "trade",
+  "version": "0.1.0",
+  "description": "Spot trading bot — Claude + Binance",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/cli.ts",
+    "start": "node dist/cli.js",
+    "test-binance-public": "ts-node src/scripts/test-binance-public.ts",
+    "test-binance-private": "ts-node src/scripts/test-binance-private.ts",
+    "test-claude": "ts-node src/scripts/test-claude.ts",
+    "dryrun": "ts-node src/cli.ts dryrun",
+    "live": "ts-node src/cli.ts live",
+    "once": "ts-node src/cli.ts once",
+    "monitor": "ts-node src/cli.ts monitor",
+    "backtest": "ts-node src/cli.ts backtest --symbol BTCUSDT --from 2025-01-01 --to 2025-04-01",
+    "status": "ts-node src/cli.ts status"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.96.0",
+    "axios": "^1.7.0",
+    "better-sqlite3": "^11.3.0",
+    "commander": "^12.1.0",
+    "dotenv": "^16.4.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.14.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.5.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "ISC"
+}

@@ -1,0 +1,34 @@
+[Unit]
+Description=Trade bot — Claude + Binance spot trading
+Documentation=file:///opt/trade/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=trade
+Group=trade
+WorkingDirectory=/opt/trade
+EnvironmentFile=/opt/trade/.env
+
+ExecStart=/usr/bin/node --enable-source-maps node_modules/ts-node/dist/bin.js src/cli.ts dryrun
+
+Restart=on-failure
+RestartSec=30
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+KillSignal=SIGINT
+TimeoutStopSec=120
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/trade/data /opt/trade/logs
+
+StandardOutput=append:/opt/trade/logs/trade.log
+StandardError=append:/opt/trade/logs/trade.err
+
+[Install]
+WantedBy=multi-user.target
