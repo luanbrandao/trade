@@ -10,12 +10,19 @@ import { isInCooldown, remainingCooldownMinutes } from '../storage/cooldowns';
 import { getOpenTrades } from '../storage/trades';
 import { TradeCloser, CloserResult } from '../postmortem/closer';
 import { FillSimulator } from '../paper/fill-simulator';
+import { checkDailyGate } from '../paper/daily-gate';
 import { log } from '../logger';
 import { detectRegime, RegimeSnapshot } from './regime';
 
 export interface SymbolResult {
   symbol: string;
-  outcome: 'SKIPPED_COOLDOWN' | 'SKIPPED_EMA' | 'SKIPPED_DECISION' | 'EXECUTED' | 'ERROR';
+  outcome:
+    | 'SKIPPED_COOLDOWN'
+    | 'SKIPPED_EMA'
+    | 'SKIPPED_DECISION'
+    | 'SKIPPED_DAILY_GATE'
+    | 'EXECUTED'
+    | 'ERROR';
   decisionId?: number;
   executionResult?: ExecutionResult;
   reason?: string;
@@ -52,6 +59,17 @@ export class Orchestrator {
   }
 
   async runSymbol(symbol: string): Promise<SymbolResult> {
+    if (this.mode === 'dryrun') {
+      const gate = checkDailyGate();
+      if (!gate.allowed) {
+        return {
+          symbol,
+          outcome: 'SKIPPED_DAILY_GATE',
+          reason: gate.reason,
+        };
+      }
+    }
+
     if (isInCooldown(symbol, config.trading.cooldownMinutes)) {
       const remaining = remainingCooldownMinutes(symbol, config.trading.cooldownMinutes);
       return {
