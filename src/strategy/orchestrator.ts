@@ -9,6 +9,7 @@ import { insertDecision, markDecisionExecuted, markDecisionSkipped } from '../st
 import { isInCooldown, remainingCooldownMinutes } from '../storage/cooldowns';
 import { getOpenTrades } from '../storage/trades';
 import { TradeCloser, CloserResult } from '../postmortem/closer';
+import { FillSimulator } from '../paper/fill-simulator';
 import { log } from '../logger';
 import { detectRegime, RegimeSnapshot } from './regime';
 
@@ -27,6 +28,7 @@ export class Orchestrator {
   private claude: ClaudeClient;
   private executor: TradeExecutor;
   private closer: TradeCloser;
+  private fillSim: FillSimulator;
   private mode: ExecutionMode;
 
   constructor(mode: ExecutionMode) {
@@ -38,6 +40,7 @@ export class Orchestrator {
     this.claude = new ClaudeClient();
     this.executor = new TradeExecutor(this.priv);
     this.closer = new TradeCloser(this.pub, this.priv);
+    this.fillSim = new FillSimulator(this.pub, this.closer);
     this.mode = mode;
   }
 
@@ -45,7 +48,7 @@ export class Orchestrator {
     if (this.mode === 'live') {
       return this.closer.runLive();
     }
-    return this.closer.runDryrunTimeout();
+    return this.fillSim.runDryrunFillSim();
   }
 
   async runSymbol(symbol: string): Promise<SymbolResult> {

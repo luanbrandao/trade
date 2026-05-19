@@ -9,6 +9,7 @@ import { closeDb } from './storage/db';
 import { BinancePublicClient } from './binance/public-client';
 import { BinancePrivateClient } from './binance/private-client';
 import { TradeCloser } from './postmortem/closer';
+import { FillSimulator } from './paper/fill-simulator';
 import { runBacktest, LlmMode } from './backtest/engine';
 import { computeMetrics, formatMetrics } from './backtest/metrics';
 import { KlineInterval } from './binance/public-client';
@@ -142,10 +143,9 @@ program
         ? new BinancePrivateClient(config.binance.apiKey, config.binance.apiSecret)
         : null;
     const closer = new TradeCloser(pub, priv);
+    const fillSim = new FillSimulator(pub, closer);
     const result =
-      opts.mode === 'live'
-        ? await closer.runLive()
-        : await closer.runDryrunTimeout(parseInt(opts.maxAgeHours, 10));
+      opts.mode === 'live' ? await closer.runLive() : await fillSim.runDryrunFillSim();
     log.info('Closer done', { checked: result.checked, closed: result.closed, errors: result.errors });
     closeDb();
     process.exit(0);

@@ -20,17 +20,10 @@ export class TradeCloser {
 
   async runLive(): Promise<CloserResult> {
     const open = getOpenTrades().filter((t) => t.mode === 'live');
-    return this.processBatch(open, true);
+    return this.processBatch(open);
   }
 
-  async runDryrunTimeout(maxAgeHours = 48): Promise<CloserResult> {
-    const open = getOpenTrades().filter((t) => t.mode === 'dryrun');
-    const cutoffTs = Date.now() - maxAgeHours * 3_600_000;
-    const aged = open.filter((t) => t.ts < cutoffTs);
-    return this.processBatch(aged, false);
-  }
-
-  private async processBatch(trades: TradeRecord[], isLive: boolean): Promise<CloserResult> {
+  private async processBatch(trades: TradeRecord[]): Promise<CloserResult> {
     const result: CloserResult = { checked: trades.length, closed: 0, errors: 0 };
 
     for (const trade of trades) {
@@ -38,9 +31,7 @@ export class TradeCloser {
       if (postmortemExistsForTrade(trade.id)) continue;
 
       try {
-        const closed = isLive
-          ? await this.tryCloseLive(trade)
-          : await this.tryCloseDryrunTimeout(trade);
+        const closed = await this.tryCloseLive(trade);
         if (closed) result.closed += 1;
       } catch (err: any) {
         log.error('Closer error', { tradeId: trade.id, symbol: trade.symbol, err: err.message });
@@ -72,15 +63,6 @@ export class TradeCloser {
     return true;
   }
 
-  private async tryCloseDryrunTimeout(trade: TradeRecord): Promise<boolean> {
-    if (!trade.id) return false;
-
-    const currentPrice = parseFloat((await this.pub.getPrice(trade.symbol)).price);
-    const closedTs = Date.now();
-    await this.persistClose(trade, currentPrice, closedTs, 'TIMEOUT');
-    return true;
-  }
-
   private classifyExit(trade: TradeRecord, exitPrice: number): PostmortemOutcome {
     if (trade.tpPrice && trade.slPrice) {
       const tpDist = Math.abs(exitPrice - trade.tpPrice) / trade.tpPrice;
@@ -91,11 +73,12 @@ export class TradeCloser {
     return 'MANUAL';
   }
 
-  private async persistClose(
+  async persistClose(
     trade: TradeRecord,
     exitPrice: number,
     closedTs: number,
     outcome: PostmortemOutcome,
+    notes: string | null = null,
   ): Promise<void> {
     if (!trade.id) return;
 
@@ -126,7 +109,7 @@ export class TradeCloser {
       maePct: maeMfe?.maePct ?? null,
       mfePct: maeMfe?.mfePct ?? null,
       classification,
-      notes: null,
+      notes,
     });
 
     log.info('Trade closed + postmortem recorded', {
@@ -135,6 +118,7 @@ export class TradeCloser {
       outcome,
       pnlPct: pnlPct.toFixed(2),
       classification,
+      notes,
     });
   }
 
