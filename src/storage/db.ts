@@ -90,6 +90,9 @@ export function getDb(): Database.Database {
     db.exec(sql);
   }
 
+  addColumnIfMissing(db, 'trades', 'strategy_name', "TEXT NOT NULL DEFAULT 'unknown'");
+  addColumnIfMissing(db, 'decisions', 'strategy_name', "TEXT NOT NULL DEFAULT 'unknown'");
+
   dbInstance = db;
   return db;
 }
@@ -99,4 +102,15 @@ export function closeDb(): void {
     dbInstance.close();
     dbInstance = null;
   }
+}
+
+function addColumnIfMissing(
+  db: Database.Database,
+  table: string,
+  column: string,
+  ddl: string,
+): void {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (cols.some((c) => c.name === column)) return;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
 }
