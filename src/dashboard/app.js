@@ -217,3 +217,54 @@ es.addEventListener('loop', () => {
   // a status flip will arrive via the next snapshot; force an immediate refresh
   fetch(api('/api/status')).then((r) => r.json()).then(render).catch(() => {});
 });
+
+// --- settings panel ---
+const settingsForm = $('settings-form');
+
+function fillSelect(sel, options, current) {
+  sel.innerHTML = options.map((o) => `<option value="${o}"${o === current ? ' selected' : ''}>${o}</option>`).join('');
+}
+
+async function loadSettings() {
+  const data = await fetch(api('/api/settings')).then((r) => r.json());
+  fillSelect($('f-provider'), data.meta.providers, data.values.llmProvider);
+  fillSelect($('f-kline'), data.meta.klineIntervals, data.values.klineInterval);
+  for (const [k, v] of Object.entries(data.values)) {
+    const el = settingsForm.elements[k];
+    if (el && el.tagName !== 'SELECT') el.value = v;
+  }
+}
+
+$('btn-settings').addEventListener('click', () => {
+  $('settings-drawer').classList.remove('collapsed');
+  loadSettings().catch(() => { $('settings-msg').textContent = 'load failed'; });
+});
+$('settings-close').addEventListener('click', () => $('settings-drawer').classList.add('collapsed'));
+
+settingsForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  settingsForm.querySelectorAll('label.invalid').forEach((l) => l.classList.remove('invalid'));
+  const payload = {};
+  for (const el of settingsForm.elements) {
+    if (!el.name) continue;
+    payload[el.name] = el.value;
+  }
+  $('settings-msg').textContent = 'saving…';
+  const res = await fetch(api('/api/settings'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json();
+  if (res.ok) {
+    $('settings-msg').textContent = body.restarted ? 'saved · loop restarted' : 'saved';
+  } else if (body.errors) {
+    for (const field of Object.keys(body.errors)) {
+      const el = settingsForm.elements[field];
+      if (el && el.closest('label')) el.closest('label').classList.add('invalid');
+    }
+    $('settings-msg').textContent = 'fix highlighted fields';
+  } else {
+    $('settings-msg').textContent = body.reason || 'save failed';
+  }
+});

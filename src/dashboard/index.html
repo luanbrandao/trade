@@ -23,6 +23,7 @@
       <button id="btn-start" class="btn hidden">START</button>
       <button id="btn-stop" class="btn btn-danger hidden">STOP</button>
       <span id="stop-confirm" class="hidden">Confirm? <button id="btn-stop-yes" class="btn btn-danger">yes</button> <button id="btn-stop-cancel" class="btn">cancel</button></span>
+      <button id="btn-settings" class="btn">⚙ settings</button>
     </span>
   </div>
 </header>
@@ -75,6 +76,49 @@
 <div id="log-drawer" class="log-drawer collapsed">
   <button id="log-toggle" class="log-toggle">▣ logs</button>
   <pre id="log-body" class="log-body"></pre>
+</div>
+
+<div id="settings-drawer" class="settings-drawer collapsed">
+  <div class="settings-head">
+    <span>Settings</span>
+    <button id="settings-close" class="btn">✕</button>
+  </div>
+  <form id="settings-form" class="settings-form">
+    <fieldset><legend>LLM</legend>
+      <label>provider <select name="llmProvider" id="f-provider"></select></label>
+      <label>model <input name="llmModel" type="text" /></label>
+    </fieldset>
+    <fieldset><legend>Período</legend>
+      <label>candle timeframe <select name="klineInterval" id="f-kline"></select></label>
+      <label>loop interval (min) <input name="loopIntervalMinutes" type="number" min="1" /></label>
+    </fieldset>
+    <fieldset><legend>Sizing &amp; risco</legend>
+      <label>sizing mode <select name="sizingMode">
+        <option value="fixed">fixed</option><option value="risk">risk</option><option value="atr">atr</option>
+      </select></label>
+      <label>amount USD <input name="amountUsd" type="number" step="1" min="1" max="200" /></label>
+      <label>risk % / trade <input name="riskPctPerTrade" type="number" step="0.1" min="0.1" max="5" /></label>
+      <label>ATR multiplier <input name="atrMultiplier" type="number" step="0.1" min="0.5" max="10" /></label>
+      <label>account equity USD <input name="accountEquityUsd" type="number" step="1" min="1" /></label>
+    </fieldset>
+    <fieldset><legend>Filtros</legend>
+      <label>min confidence <input name="minConfidence" type="number" min="0" max="100" /></label>
+      <label>min R/R <input name="minRrRatio" type="number" step="0.1" min="1" /></label>
+      <label>cooldown (min) <input name="cooldownMinutes" type="number" min="0" /></label>
+    </fieldset>
+    <fieldset><legend>Símbolos</legend>
+      <label>symbols (csv) <input name="symbols" type="text" /></label>
+    </fieldset>
+    <fieldset><legend>Limites diários</legend>
+      <label>max daily loss % <input name="maxDailyLossPct" type="number" step="0.1" min="0" max="100" /></label>
+      <label>max daily losses <input name="maxDailyLosses" type="number" min="1" step="1" /></label>
+      <label>max portfolio heat % <input name="maxPortfolioHeatPct" type="number" step="0.1" min="0" max="50" /></label>
+    </fieldset>
+    <div class="settings-actions">
+      <button type="submit" id="settings-save" class="btn">Save</button>
+      <span id="settings-msg" class="dim"></span>
+    </div>
+  </form>
 </div>
 
 <script src="app.js"></script>
