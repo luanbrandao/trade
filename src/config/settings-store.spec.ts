@@ -46,7 +46,7 @@ describe('settings-store', () => {
   });
 
   it('throws SettingsValidationError on invalid values', () => {
-    expect(() => writeSettings({ amountUsd: 999 })).toThrow(SettingsValidationError);
+    expect(() => writeSettings({ amountUsd: 99999 })).toThrow(SettingsValidationError);
     expect(() => writeSettings({ klineInterval: '7m' as any })).toThrow(SettingsValidationError);
   });
 

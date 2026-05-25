@@ -229,6 +229,7 @@ async function loadSettings() {
   const data = await fetch(api('/api/settings')).then((r) => r.json());
   fillSelect($('f-provider'), data.meta.providers, data.values.llmProvider);
   fillSelect($('f-kline'), data.meta.klineIntervals, data.values.klineInterval);
+  settingsForm.elements.amountUsd.max = data.meta.maxAmountUsd;
   for (const [k, v] of Object.entries(data.values)) {
     const el = settingsForm.elements[k];
     if (el && el.tagName !== 'SELECT') el.value = v;

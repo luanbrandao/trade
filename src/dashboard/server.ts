@@ -7,7 +7,7 @@ import { LoopController } from './loop-controller';
 import { StatsReader } from './stats-reader';
 import { LogLine, LoopEvent } from './types';
 import { effectiveSettings, keyedProviders } from '../config/effective-settings';
-import { writeSettings, SettingsValidationError, KLINE_INTERVALS } from '../config/settings-store';
+import { writeSettings, SettingsValidationError, KLINE_INTERVALS, MAX_TRADE_AMOUNT_USD } from '../config/settings-store';
 
 const STATIC_DIR = __dirname;
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
@@ -123,7 +123,7 @@ export function createServer(controller: LoopController, reader: StatsReader): h
       if (req.method === 'GET' && pathname === '/api/settings') {
         return json(res, 200, {
           values: effectiveSettings(),
-          meta: { providers: keyedProviders(), klineIntervals: KLINE_INTERVALS, maxAmountUsd: 200 },
+          meta: { providers: keyedProviders(), klineIntervals: KLINE_INTERVALS, maxAmountUsd: MAX_TRADE_AMOUNT_USD },
         });
       }
       if (req.method === 'POST' && pathname === '/api/settings') {

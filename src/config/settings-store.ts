@@ -2,10 +2,10 @@ import { z } from 'zod';
 import * as fs from 'fs';
 import * as path from 'path';
 
-// Mirror of ConfigSchema.trading bounds. Hardcoded (not imported from config)
-// to keep this module dependency-free and avoid an import cycle: config.ts
-// imports this module for the env overlay.
-const MAX_TRADE_AMOUNT_USD = 200;
+// Single source of truth for the per-trade notional cap. Lives here (not in
+// config.ts) to stay dependency-free and avoid an import cycle: config.ts
+// imports this module for the env overlay and re-exports this constant.
+export const MAX_TRADE_AMOUNT_USD = 10000;
 
 export const LLM_PROVIDERS = ['anthropic', 'openai', 'gemini', 'deepseek'] as const;
 export const KLINE_INTERVALS = ['15m', '30m', '1h', '4h', '12h'] as const;

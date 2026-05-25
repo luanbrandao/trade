@@ -141,7 +141,7 @@ describe('dashboard server', () => {
     const res = await fetch(`${base}/api/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amountUsd: 999 }),
+      body: JSON.stringify({ amountUsd: 99999 }),
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as any;

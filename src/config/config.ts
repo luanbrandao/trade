@@ -1,10 +1,8 @@
 import * as dotenv from 'dotenv';
 import { z } from 'zod';
-import { readSettings, settingsToEnv } from './settings-store';
+import { readSettings, settingsToEnv, MAX_TRADE_AMOUNT_USD } from './settings-store';
 
 dotenv.config();
-
-const MAX_TRADE_AMOUNT_USD = 200;
 
 const csvList = z
   .string()
