@@ -50,7 +50,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 48px 32px; }
 
 .chart, .block { padding: 40px 0; border-bottom: 1px solid var(--rule); }
 .chart h2, .block h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--dim); margin-bottom: 20px; }
-canvas { width: 100%; height: 300px; }
+.chart-canvas { position: relative; height: 300px; }
 
 table { width: 100%; border-collapse: collapse; font-family: 'JetBrains Mono', monospace; font-size: 13px; }
 th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule); font-weight: 400; }
