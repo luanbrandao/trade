@@ -14,6 +14,10 @@ const boolFromYesNo = z
   .enum(['yes', 'no'])
   .transform((v) => v === 'yes');
 
+const boolFromFlag = z
+  .string()
+  .transform((v) => ['1', 'true', 'yes', 'on'].includes(v.trim().toLowerCase()));
+
 const ConfigSchema = z.object({
   binance: z.object({
     apiKey: z.string().default(''),
@@ -61,6 +65,12 @@ const ConfigSchema = z.object({
   }),
   storage: z.object({
     dbPath: z.string().default('./data/trade.db'),
+  }),
+  dashboard: z.object({
+    port: z.coerce.number().int().min(1).max(65535).default(8787),
+    host: z.string().default('0.0.0.0'),
+    pathPrefix: z.string().default(''),
+    autostartLoop: boolFromFlag.default('false'),
   }),
   logging: z.object({
     level: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
@@ -133,6 +143,12 @@ function loadConfig(): Config {
     },
     storage: {
       dbPath: process.env.DB_PATH,
+    },
+    dashboard: {
+      port: process.env.DASHBOARD_PORT,
+      host: process.env.DASHBOARD_HOST,
+      pathPrefix: process.env.DASHBOARD_PATH_PREFIX,
+      autostartLoop: process.env.DASHBOARD_AUTOSTART_LOOP,
     },
     logging: {
       level: process.env.LOG_LEVEL,
