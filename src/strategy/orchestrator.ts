@@ -19,6 +19,7 @@ export interface SymbolResult {
   symbol: string;
   outcome:
     | 'SKIPPED_COOLDOWN'
+    | 'SKIPPED_OPEN_POSITION'
     | 'SKIPPED_EMA'
     | 'SKIPPED_DECISION'
     | 'SKIPPED_DAILY_GATE'
@@ -82,6 +83,16 @@ export class Orchestrator {
 
     const openTrades = getOpenTrades(symbol);
     const hasOpenPosition = openTrades.length > 0;
+
+    // One position per symbol: never stack a second trade on the same crypto.
+    // Skip before fetching the snapshot / calling the LLM to save cost.
+    if (hasOpenPosition) {
+      return {
+        symbol,
+        outcome: 'SKIPPED_OPEN_POSITION',
+        reason: `already has an open ${symbol} position`,
+      };
+    }
 
     let snapshot;
     try {
