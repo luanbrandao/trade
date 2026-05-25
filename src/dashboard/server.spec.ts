@@ -66,6 +66,8 @@ describe('dashboard server', () => {
     expect(body.stats.tradesClosed).toBe(1);
     expect(body.loop.running).toBe(false);
     expect(Array.isArray(body.closedTrades)).toBe(true);
+    expect(body.llm.provider).toBeDefined();
+    expect(body.llm.model).toBeDefined();
   });
 
   it('GET / serves the HTML shell', async () => {

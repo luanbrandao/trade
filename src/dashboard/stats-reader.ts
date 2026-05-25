@@ -1,4 +1,5 @@
 import { config } from '../config/config';
+import { effectiveSettings } from '../config/effective-settings';
 import { getDb } from '../storage/db';
 import { collectStats } from '../stats/collect';
 import { PriceCache } from './binance-prices';
@@ -134,7 +135,10 @@ export class StatsReader {
       decisions,
       equityCurve: stats.equityCurve,
       llmCost: collectLlmCost(strategyName),
-      llm: { provider: config.llm.provider, model: config[config.llm.provider].model },
+      llm: (() => {
+        const eff = effectiveSettings();
+        return { provider: eff.llmProvider, model: eff.llmModel };
+      })(),
     };
   }
 }
