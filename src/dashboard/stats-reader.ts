@@ -44,6 +44,8 @@ export class StatsReader {
         side: t.side,
         qty: t.qty,
         entry: t.avg_price,
+        stop: t.sl_price,
+        target: t.tp_price,
         currentPrice: price,
         pnlQuote,
         pnlPct,

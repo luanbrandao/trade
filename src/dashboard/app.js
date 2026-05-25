@@ -83,14 +83,16 @@ function renderStats(s, llm, llmInfo) {
 function renderOpen(rows) {
   const body = $('open-rows');
   if (!rows.length) {
-    body.innerHTML = '<tr><td class="empty" colspan="7">no open positions</td></tr>';
+    body.innerHTML = '<tr><td class="empty" colspan="9">no open positions</td></tr>';
     return;
   }
+  const px = (v) => (v != null ? v.toFixed(2) : '—');
   body.innerHTML = rows
     .map(
       (t) => `<tr>
       <td>${t.symbol}</td><td>${t.side}</td><td>${t.qty}</td>
-      <td>${t.entry.toFixed(2)}</td><td>${t.currentPrice.toFixed(2)}</td>
+      <td>${t.entry.toFixed(2)}</td><td class="neg">${px(t.stop)}</td><td class="pos">${px(t.target)}</td>
+      <td>${t.currentPrice.toFixed(2)}</td>
       <td class="${cls(t.pnlQuote)}">${fmtUsd(t.pnlQuote)}</td>
       <td class="${cls(t.pnlPct)}">${fmtPct(t.pnlPct)}</td></tr>`,
     )

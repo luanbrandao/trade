@@ -127,6 +127,8 @@ describe('StatsReader.snapshot', () => {
     // open ETH: (3050 - 3000) * 0.01 = 0.5
     expect(snap.openTrades).toHaveLength(1);
     expect(snap.openTrades[0].currentPrice).toBe(3050);
+    expect(snap.openTrades[0].stop).toBe(2900);
+    expect(snap.openTrades[0].target).toBe(3100);
     expect(snap.openTrades[0].pnlQuote).toBeCloseTo(0.5, 6);
     expect(snap.stats.openPnlQuote).toBeCloseTo(0.5, 6);
 

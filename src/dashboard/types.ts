@@ -45,6 +45,8 @@ export interface OpenTradeView {
   side: 'BUY' | 'SELL';
   qty: number;
   entry: number;
+  stop: number | null;
+  target: number | null;
   currentPrice: number;
   pnlQuote: number;
   pnlPct: number;

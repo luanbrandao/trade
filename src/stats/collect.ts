@@ -28,6 +28,8 @@ export interface OpenTrade {
   side: 'BUY' | 'SELL';
   avg_price: number;
   qty: number;
+  tp_price: number | null;
+  sl_price: number | null;
   strategy_name: string;
 }
 
@@ -84,7 +86,7 @@ export function collectStats(strategy: string | undefined, since: number | undef
 
   const openRows = db
     .prepare(
-      `SELECT id, ts, symbol, side, avg_price, qty, strategy_name
+      `SELECT id, ts, symbol, side, avg_price, qty, tp_price, sl_price, strategy_name
        FROM trades
        WHERE mode = 'dryrun' AND strategy_name = ? AND status = 'OPEN'`,
     )
