@@ -214,6 +214,41 @@ npm run monitor -- --interval 10 --mode live
 
 Renders open trades, PnL summary, and recent decisions.
 
+## Paper-trading dashboard (web)
+
+A single-user web dashboard to start/stop the dryrun loop and watch live stats.
+
+```bash
+npm run dashboard        # serves on http://localhost:8787
+```
+
+Environment (all optional, see `.env.example`):
+
+- `DASHBOARD_PORT` (default `8787`)
+- `DASHBOARD_HOST` (default `0.0.0.0`; use `127.0.0.1` behind an SSH tunnel)
+- `DASHBOARD_PATH_PREFIX` (optional secret path, e.g. `/dash-x7k9q2` — access **with a trailing slash**: `http://host:8787/dash-x7k9q2/`)
+- `DASHBOARD_AUTOSTART_LOOP` (default `false`)
+
+Security: no auth. The dashboard only starts/stops a **dryrun** loop (no money movement). On a VPS, restrict access:
+
+```bash
+sudo ufw allow from <home-ip> to any port 8787
+# or bind 127.0.0.1 and tunnel:  ssh -L 8787:localhost:8787 vps
+```
+
+The dashboard is the parent process; it spawns `ts-node src/cli.ts dryrun` as a child
+(forced `TRADE_MODE=dryrun`) and only reads SQLite — the loop child writes.
+
+### Deploy (systemd)
+
+```bash
+sudo systemctl disable --now trade.service        # if previously installed
+sudo cp ops/trade-dashboard.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now trade-dashboard.service
+# access: http://<vps-ip>:8787
+```
+
 ## Env vars
 
 | Var                       | Default              | Notes                                                                      |

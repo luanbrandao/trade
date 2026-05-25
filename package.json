@@ -12,6 +12,7 @@
     "test-binance-private": "ts-node src/scripts/test-binance-private.ts",
     "test-claude": "ts-node src/scripts/test-claude.ts",
     "stats": "ts-node src/scripts/stats.ts",
+    "dashboard": "ts-node src/dashboard/server.ts",
     "watch-trades": "ts-node src/scripts/monitor.ts",
     "dryrun": "ts-node src/cli.ts dryrun",
     "live": "ts-node src/cli.ts live",

@@ -1,0 +1,19 @@
+[Unit]
+Description=Trade dashboard (paper, single-user)
+After=network.target
+
+[Service]
+Type=simple
+User=trade
+WorkingDirectory=/opt/trade
+EnvironmentFile=/opt/trade/.env
+ExecStart=/usr/bin/node node_modules/ts-node/dist/bin.js src/dashboard/server.ts
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/trade/data /opt/trade/logs
+
+[Install]
+WantedBy=multi-user.target
