@@ -2,6 +2,7 @@ import { BinancePublicClient, KlineInterval } from '../binance/public-client';
 import { emaState } from '../indicators/ema';
 import { atr } from '../indicators/atr';
 import { MarketSnapshot } from '../llm/prompt';
+import { config } from '../config/config';
 
 export interface FetchOptions {
   klineInterval: KlineInterval;
@@ -12,7 +13,7 @@ export interface FetchOptions {
 }
 
 export const DEFAULT_FETCH: FetchOptions = {
-  klineInterval: '1h',
+  klineInterval: config.trading.klineInterval,
   klineLimit: 100,
   bookDepth: 10,
   emaFast: 9,
