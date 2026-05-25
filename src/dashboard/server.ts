@@ -6,6 +6,8 @@ import { log } from '../logger';
 import { LoopController } from './loop-controller';
 import { StatsReader } from './stats-reader';
 import { LogLine, LoopEvent } from './types';
+import { effectiveSettings, keyedProviders } from '../config/effective-settings';
+import { writeSettings, SettingsValidationError, KLINE_INTERVALS } from '../config/settings-store';
 
 const STATIC_DIR = __dirname;
 const PROJECT_ROOT = path.resolve(__dirname, '..', '..');
@@ -42,6 +44,13 @@ export function createServer(controller: LoopController, reader: StatsReader): h
   function json(res: http.ServerResponse, code: number, body: unknown): void {
     res.writeHead(code, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(body));
+  }
+
+  async function readJsonBody(req: http.IncomingMessage): Promise<unknown> {
+    const chunks: Buffer[] = [];
+    for await (const c of req) chunks.push(c as Buffer);
+    if (chunks.length === 0) return {};
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   }
 
   function serveStatic(name: string, res: http.ServerResponse): void {
@@ -110,6 +119,34 @@ export function createServer(controller: LoopController, reader: StatsReader): h
       }
       if (req.method === 'POST' && pathname === '/api/stop') {
         return json(res, 200, await controller.stop());
+      }
+      if (req.method === 'GET' && pathname === '/api/settings') {
+        return json(res, 200, {
+          values: effectiveSettings(),
+          meta: { providers: keyedProviders(), klineIntervals: KLINE_INTERVALS, maxAmountUsd: 200 },
+        });
+      }
+      if (req.method === 'POST' && pathname === '/api/settings') {
+        let body: unknown;
+        try {
+          body = await readJsonBody(req);
+        } catch {
+          return json(res, 400, { ok: false, reason: 'invalid JSON' });
+        }
+        try {
+          writeSettings(body);
+        } catch (e) {
+          if (e instanceof SettingsValidationError) {
+            return json(res, 400, { ok: false, errors: e.fieldErrors });
+          }
+          throw e;
+        }
+        let restarted = false;
+        if (controller.isRunning()) {
+          await controller.restart();
+          restarted = true;
+        }
+        return json(res, 200, { ok: true, restarted });
       }
       if (req.method === 'GET' && pathname === '/api/logs') {
         const n = parseInt(url.searchParams.get('n') ?? '200', 10) || 200;

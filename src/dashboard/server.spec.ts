@@ -6,6 +6,7 @@ import * as http from 'http';
 import { AddressInfo } from 'net';
 
 process.env.DB_PATH = path.resolve('./data/test-server.db');
+process.env.SETTINGS_PATH = path.resolve('./data/test-server-settings.json');
 
 import { config } from '../config/config';
 import { getDb, closeDb } from '../storage/db';
@@ -54,6 +55,7 @@ afterAll(async () => {
   await new Promise((r) => server.close(r));
   closeDb();
   try { if (fs.existsSync(pidFile)) fs.unlinkSync(pidFile); } catch {}
+  try { if (fs.existsSync(process.env.SETTINGS_PATH!)) fs.unlinkSync(process.env.SETTINGS_PATH!); } catch {}
 });
 
 describe('dashboard server', () => {
@@ -107,5 +109,41 @@ describe('dashboard server', () => {
     const res = await fetch(`${base}/api/logs?n=10`);
     expect(res.status).toBe(200);
     expect(Array.isArray(await res.json())).toBe(true);
+  });
+
+  it('GET /api/settings returns values and provider meta', async () => {
+    const res = await fetch(`${base}/api/settings`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.values.klineInterval).toBeDefined();
+    expect(Array.isArray(body.meta.providers)).toBe(true);
+    expect(body.meta.klineIntervals).toContain('4h');
+  });
+
+  it('POST /api/settings persists valid settings', async () => {
+    const res = await fetch(`${base}/api/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ klineInterval: '4h', minConfidence: 80 }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.ok).toBe(true);
+    expect(body.restarted).toBe(false); // loop not running in this test
+    const after = (await (await fetch(`${base}/api/settings`)).json()) as any;
+    expect(after.values.klineInterval).toBe('4h');
+    expect(after.values.minConfidence).toBe(80);
+  });
+
+  it('POST /api/settings rejects invalid values with 400', async () => {
+    const res = await fetch(`${base}/api/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amountUsd: 999 }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as any;
+    expect(body.ok).toBe(false);
+    expect(body.errors.amountUsd).toBeDefined();
   });
 });
