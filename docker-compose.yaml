@@ -1,44 +1,22 @@
 # Default deploy: dashboard owns the dryrun loop (spawns it as a child).
-# For LIVE trading, stop the dashboard service and uncomment `bot-live` below.
-# Never run both at once — two writers on the same SQLite file.
+# For LIVE trading, stop the dashboard service and run the cli with `live` instead.
+# Never run two writers on the same SQLite file.
 
 services:
   dashboard:
     build: .
     image: trade:latest
-    container_name: trade-dashboard
     restart: unless-stopped
-    env_file: .env
-    environment:
-      DB_PATH: /app/data/trade.db
-      DASHBOARD_HOST: 0.0.0.0
-      DASHBOARD_PORT: 8787
-      DASHBOARD_AUTOSTART_LOOP: "true"
     ports:
       - "8787:8787"
     volumes:
-      - ./data:/app/data
-      - ./logs:/app/logs
+      - trade-data:/app/data
+      - trade-logs:/app/logs
     command:
       - node
       - node_modules/ts-node/dist/bin.js
       - src/dashboard/server.ts
 
-  # bot-live:
-  #   image: trade:latest
-  #   container_name: trade-bot-live
-  #   restart: unless-stopped
-  #   env_file: .env
-  #   environment:
-  #     DB_PATH: /app/data/trade.db
-  #     TRADE_MODE: live
-  #     I_UNDERSTAND_RISKS: "yes"
-  #   volumes:
-  #     - ./data:/app/data
-  #     - ./logs:/app/logs
-  #   command:
-  #     - node
-  #     - --enable-source-maps
-  #     - node_modules/ts-node/dist/bin.js
-  #     - src/cli.ts
-  #     - live
+volumes:
+  trade-data:
+  trade-logs:
