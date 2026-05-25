@@ -66,7 +66,10 @@ export class LoopController extends EventEmitter {
     try {
       const child = spawn(this.command, this.args, {
         cwd: PROJECT_ROOT,
-        env: { ...process.env, TRADE_MODE: 'dryrun' },
+        // TRADE_MODE forced to dryrun (defense in depth).
+        // TS_NODE_TRANSPILE_ONLY skips per-spawn type-checking — without it
+        // ts-node takes 20s+ to boot before the loop emits its first log.
+        env: { ...process.env, TRADE_MODE: 'dryrun', TS_NODE_TRANSPILE_ONLY: '1' },
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: false,
       });
