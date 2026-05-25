@@ -12,7 +12,10 @@ export const TradeDecisionSchema = z.object({
   reason: z
     .string()
     .min(10)
-    .max(500)
+    // Truncate instead of rejecting: verbose models (e.g. deepseek) routinely
+    // overshoot the soft limit, and dropping an otherwise-valid decision over a
+    // long rationale is worse than clipping the text.
+    .transform((s) => s.slice(0, 1000))
     .describe(
       'Concise rationale citing specific data: trend direction, indicator readings, volume, price action. No fluff.',
     ),
@@ -33,7 +36,7 @@ export const TradeDecisionSchema = z.object({
     .max(1440)
     .describe('Expected time for the trade thesis to play out, in minutes.'),
   keyRisks: z
-    .array(z.string().max(200))
+    .array(z.string().transform((s) => s.slice(0, 200)))
     .min(1)
     .max(5)
     .describe('1-5 specific risks that would invalidate this thesis.'),
@@ -58,7 +61,7 @@ export const TradeDecisionJsonSchema = {
     reason: {
       type: 'string',
       minLength: 10,
-      maxLength: 500,
+      maxLength: 1000,
       description:
         'Concise rationale citing specific data: trend direction, indicator readings, volume, price action. No fluff.',
     },
