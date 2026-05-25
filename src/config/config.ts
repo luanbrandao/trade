@@ -24,7 +24,7 @@ const ConfigSchema = z.object({
     apiSecret: z.string().default(''),
   }),
   llm: z.object({
-    provider: z.enum(['anthropic', 'openai', 'gemini', 'deepseek']).default('anthropic'),
+    provider: z.enum(['anthropic', 'openai', 'gemini', 'deepseek']).default('deepseek'),
   }),
   anthropic: z.object({
     apiKey: z.string().default(''),
