@@ -1,5 +1,6 @@
 import * as dotenv from 'dotenv';
 import { z } from 'zod';
+import { readSettings, settingsToEnv } from './settings-store';
 
 dotenv.config();
 
@@ -57,6 +58,7 @@ const ConfigSchema = z.object({
     cooldownMinutes: z.coerce.number().min(0).default(30),
     symbols: csvList.default('BTCUSDT,ETHUSDT,SOLUSDT'),
     loopIntervalMinutes: z.coerce.number().min(1).default(15),
+    klineInterval: z.enum(['15m', '30m', '1h', '4h', '12h']).default('1h'),
     understandRisks: boolFromYesNo.default('no'),
     strategyName: z.string().min(1).default('ema9_21+claude_v1'),
     maxDailyLossPct: z.coerce.number().min(0).max(100).default(3.0),
@@ -96,6 +98,10 @@ export type NotifyEvent = 'executed' | 'error' | 'summary' | 'skipped';
 export type Config = z.infer<typeof ConfigSchema>;
 
 function loadConfig(): Config {
+  // settings.json overrides .env: overlay it onto process.env before reading.
+  const overlay = settingsToEnv(readSettings());
+  for (const [k, v] of Object.entries(overlay)) process.env[k] = v;
+
   const raw = {
     binance: {
       apiKey: process.env.BINANCE_API_KEY ?? '',
@@ -135,6 +141,7 @@ function loadConfig(): Config {
       cooldownMinutes: process.env.COOLDOWN_MINUTES,
       symbols: process.env.SYMBOLS,
       loopIntervalMinutes: process.env.LOOP_INTERVAL_MINUTES,
+      klineInterval: process.env.KLINE_INTERVAL,
       understandRisks: process.env.I_UNDERSTAND_RISKS,
       strategyName: process.env.STRATEGY_NAME,
       maxDailyLossPct: process.env.MAX_DAILY_LOSS_PCT,
@@ -181,4 +188,5 @@ function loadConfig(): Config {
 }
 
 export const config = loadConfig();
+export { loadConfig };
 export { MAX_TRADE_AMOUNT_USD };
