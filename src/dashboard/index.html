@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TRADE · paper</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,500;9..144,800&family=JetBrains+Mono:wght@300;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div id="adopted-banner" class="banner hidden">
+  Loop adopted from PID file. Logs unavailable until restart. STOP still works.
+</div>
+
+<header class="control-bar">
+  <div class="brand">TRADE <span class="dim">· paper</span></div>
+  <div class="control-right">
+    <span id="loop-state" class="loop-state"><span class="dot dot-gray"></span><span id="loop-label">…</span></span>
+    <span id="control-action">
+      <button id="btn-start" class="btn hidden">START</button>
+      <button id="btn-stop" class="btn btn-danger hidden">STOP</button>
+      <span id="stop-confirm" class="hidden">Confirm? <button id="btn-stop-yes" class="btn btn-danger">yes</button> <button id="btn-stop-cancel" class="btn">cancel</button></span>
+    </span>
+  </div>
+</header>
+
+<main>
+  <section class="equity-row">
+    <div>
+      <div class="label">Equity</div>
+      <div id="equity" class="equity mono">—</div>
+      <div id="strategy" class="dim mono"></div>
+    </div>
+    <div>
+      <div class="label">Δ since start</div>
+      <div id="delta" class="delta mono">—</div>
+      <div id="delta-pct" class="delta-pct mono"></div>
+      <div class="label" style="margin-top:20px">Daily gate</div>
+      <div id="daily-gate" class="mono">—</div>
+    </div>
+  </section>
+
+  <section class="kpi-grid" id="kpi-grid"></section>
+
+  <section class="chart">
+    <h2>Equity curve</h2>
+    <canvas id="curve"></canvas>
+  </section>
+
+  <section class="block">
+    <h2>Open positions</h2>
+    <table><thead><tr>
+      <th>symbol</th><th>side</th><th>qty</th><th>entry</th><th>now</th><th>uPnL</th><th>uPnL %</th>
+    </tr></thead><tbody id="open-rows"></tbody></table>
+  </section>
+
+  <section class="block">
+    <h2>Recent decisions</h2>
+    <table><thead><tr>
+      <th>time</th><th>symbol</th><th>action</th><th>conf</th><th>exec</th><th>reason / skip</th>
+    </tr></thead><tbody id="decision-rows"></tbody></table>
+  </section>
+
+  <section class="block">
+    <h2>Closed trades</h2>
+    <table><thead><tr>
+      <th>closed</th><th>symbol</th><th>side</th><th>entry</th><th>exit</th><th>pnl %</th><th>outcome</th><th>holding</th>
+    </tr></thead><tbody id="closed-rows"></tbody></table>
+  </section>
+</main>
+
+<div id="log-drawer" class="log-drawer collapsed">
+  <button id="log-toggle" class="log-toggle">▣ logs</button>
+  <pre id="log-body" class="log-body"></pre>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
