@@ -53,7 +53,7 @@ function kpi(label, value, sub, valueCls) {
   return `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value ${valueCls || ''}">${value}</div>${sub ? `<div class="kpi-sub">${sub}</div>` : ''}</div>`;
 }
 
-function renderStats(s, llm) {
+function renderStats(s, llm, llmInfo) {
   $('equity').textContent = `$${s.equityNow.toFixed(2)}`;
   $('strategy').textContent = `strategy: ${s.strategyName}`;
   const delta = s.equityNow - s.startingEquity;
@@ -76,6 +76,7 @@ function renderStats(s, llm) {
     kpi('Avg R/R', s.avgRrRatio.toFixed(2)),
     kpi('Open PnL', fmtUsd(s.openPnlQuote), '', cls(s.openPnlQuote)),
     kpi('LLM cost', `$${llm.totalUsd.toFixed(4)}`, `${(llm.inputTokens / 1000).toFixed(0)}k in / ${(llm.outputTokens / 1000).toFixed(1)}k out`),
+    kpi('LLM model', llmInfo.model, llmInfo.provider),
   ].join('');
 }
 
@@ -156,7 +157,7 @@ function renderChart(curve) {
 
 function render(snap) {
   renderLoop(snap.loop);
-  renderStats(snap.stats, snap.llmCost);
+  renderStats(snap.stats, snap.llmCost, snap.llm);
   renderOpen(snap.openTrades);
   renderDecisions(snap.decisions);
   renderClosed(snap.closedTrades);

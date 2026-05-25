@@ -134,6 +134,7 @@ export class StatsReader {
       decisions,
       equityCurve: stats.equityCurve,
       llmCost: collectLlmCost(strategyName),
+      llm: { provider: config.llm.provider, model: config[config.llm.provider].model },
     };
   }
 }

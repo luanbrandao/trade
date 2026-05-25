@@ -91,6 +91,7 @@ export interface DashboardSnapshot {
   decisions: DecisionView[];
   equityCurve: { ts: number; equity: number }[];
   llmCost: LlmCost;
+  llm: { provider: string; model: string };
 }
 
 export interface LogLine {
