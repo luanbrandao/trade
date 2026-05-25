@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import * as path from 'path';
 
+process.env.DB_PATH = path.resolve('./data/test-daily-gate.db');
 process.env.ACCOUNT_EQUITY_USD = '1000';
 process.env.MAX_DAILY_LOSS_PCT = '3.0';
 process.env.MAX_DAILY_LOSSES = '3';

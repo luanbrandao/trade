@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import * as path from 'path';
+
+process.env.DB_PATH = path.resolve('./data/test-strategy-name.db');
 
 import { getDb } from './db';
 import { insertTrade, TradeRecord } from './trades';

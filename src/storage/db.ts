@@ -75,7 +75,9 @@ let dbInstance: Database.Database | null = null;
 export function getDb(): Database.Database {
   if (dbInstance) return dbInstance;
 
-  const dbPath = config.storage.dbPath;
+  // Read DB_PATH from env at call time, not from the import-time config
+  // snapshot — specs set process.env.DB_PATH after module imports have run.
+  const dbPath = process.env.DB_PATH || config.storage.dbPath;
   const dir = path.dirname(dbPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
