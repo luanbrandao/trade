@@ -122,6 +122,11 @@ export class LoopController extends EventEmitter {
     return { ok: true };
   }
 
+  async restart(): Promise<{ ok: boolean; pid?: number; reason?: string }> {
+    await this.stop();
+    return this.start();
+  }
+
   logs(n = 200): LogLine[] {
     return this.ring.slice(-Math.min(n, RING_MAX));
   }

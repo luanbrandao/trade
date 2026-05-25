@@ -84,4 +84,25 @@ describe('LoopController', () => {
     const logs = ctrl.logs(50);
     expect(logs.some((l) => l.line.includes('hello-from-child'))).toBe(true);
   });
+
+  it('restart() stops the running child and starts a fresh one', async () => {
+    const pidFile = tmpPid();
+    const ctrl = new LoopController({ command: '/bin/sleep', args: ['30'], pidFile });
+    cleanups.push(() => { try { ctrl.stop(); } catch {} });
+    const first = ctrl.start();
+    expect(first.ok).toBe(true);
+    const r = await ctrl.restart();
+    expect(r.ok).toBe(true);
+    expect(ctrl.isRunning()).toBe(true);
+    expect(r.pid).not.toBe(first.pid);
+  });
+
+  it('restart() just starts when nothing is running', async () => {
+    const pidFile = tmpPid();
+    const ctrl = new LoopController({ command: '/bin/sleep', args: ['30'], pidFile });
+    cleanups.push(() => { try { ctrl.stop(); } catch {} });
+    const r = await ctrl.restart();
+    expect(r.ok).toBe(true);
+    expect(ctrl.isRunning()).toBe(true);
+  });
 });
