@@ -24,7 +24,10 @@ function fmtClock(sec) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 function tsShort(ms) {
-  return new Date(ms).toISOString().slice(5, 16).replace('T', ' ');
+  // Browser-local time, not UTC — the operator reads these against their own clock.
+  const d = new Date(ms);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 function cls(v) {
   return v >= 0 ? 'pos' : 'neg';
@@ -241,7 +244,7 @@ function appendLog(entry) {
   const body = $('log-body');
   const span = document.createElement('span');
   span.className = entry.stream === 'stderr' ? 'err' : '';
-  span.textContent = `${new Date(entry.ts).toISOString().slice(11, 19)}  ${entry.line}\n`;
+  span.textContent = `${new Date(entry.ts).toLocaleTimeString('en-GB', { hour12: false })}  ${entry.line}\n`;
   body.appendChild(span);
   while (body.childNodes.length > 800) body.removeChild(body.firstChild);
   if (autoTail) body.scrollTop = body.scrollHeight;
