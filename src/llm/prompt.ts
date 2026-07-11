@@ -120,12 +120,15 @@ function performanceBlock(ctx: PromptContext): string {
   const byConf = p.byConfidence
     .map((b) => `  - confidence ${b.range}: ${b.trades} trades, WR ${(b.winRate * 100).toFixed(0)}%`)
     .join('\n');
+  const byRegime = p.byRegime
+    .map((r) => `  - ${r.regime}: ${r.trades} trades, WR ${(r.winRate * 100).toFixed(0)}%, avg ${r.avgPnlPct.toFixed(2)}%`)
+    .join('\n');
   return `
 ## Recent performance (your last ${p.totalClosed} closed trades)
 - Win rate: ${(p.winRate * 100).toFixed(0)}%   Avg PnL: ${p.avgPnlPct.toFixed(2)}%
 - Stopped out then price reached TP anyway: ${p.slStoppedBeforeTpCount}/${p.slCount} SL trades${p.slStoppedBeforeTpCount > 0 && p.slCount > 0 && p.slStoppedBeforeTpCount / p.slCount >= 0.3 ? '  ⚠ stops likely too tight — widen' : ''}
 - By symbol:
-${bySymbol}${byConf ? `\n- By confidence bucket:\n${byConf}` : ''}
+${bySymbol}${byConf ? `\n- By confidence bucket:\n${byConf}` : ''}${byRegime ? `\n- By regime at entry:\n${byRegime}` : ''}
 `;
 }
 

@@ -87,7 +87,7 @@ export class StatsReader {
 
     const decRows = getDb()
       .prepare(
-        `SELECT ts, symbol, action, confidence, reason, executed, skip_reason
+        `SELECT ts, symbol, action, confidence, reason, executed, skip_reason, regime
          FROM decisions
          WHERE strategy_name = ? AND mode = 'dryrun'
          ORDER BY ts DESC
@@ -101,6 +101,7 @@ export class StatsReader {
       reason: string | null;
       executed: number;
       skip_reason: string | null;
+      regime: string | null;
     }[];
 
     const decisions: DecisionView[] = decRows.map((d) => ({
@@ -111,6 +112,7 @@ export class StatsReader {
       reason: d.reason,
       executed: !!d.executed,
       skipReason: d.skip_reason,
+      regime: d.regime,
     }));
 
     const statsSnap: StatsSnapshot = {

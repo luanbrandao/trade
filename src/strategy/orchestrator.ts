@@ -182,6 +182,7 @@ export class Orchestrator {
       skipReason: null,
       mode: this.mode,
       strategyName: config.trading.strategyName,
+      regime: regime?.regime ?? null,
     });
 
     if (llmResult.decision.action === 'HOLD') {
@@ -306,6 +307,7 @@ export class Orchestrator {
       skipReason: null,
       mode: this.mode,
       strategyName: config.trading.strategyName,
+      regime: regime?.regime ?? null,
     });
 
     if (llmResult.decision.action === 'BUY') {

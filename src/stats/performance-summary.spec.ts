@@ -23,12 +23,14 @@ function seedClosedTrade(opts: {
   outcome: PostmortemOutcome;
   mfePct?: number | null;
   tpPct?: number;
+  regime?: string;
 }): void {
   const entry = 100;
   const decisionId = insertDecision({
     ts: Date.now(),
     symbol: opts.symbol,
     action: 'BUY',
+    regime: opts.regime ?? null,
     confidence: opts.confidence,
     reason: 'test',
     stopLossPct: 2,
@@ -122,6 +124,23 @@ describe('getPerformanceSummary', () => {
     const high = s.byConfidence.find((b) => b.range === '90-100')!;
     expect(high.trades).toBe(1);
     expect(high.winRate).toBe(1);
+  });
+
+  it('aggregates win rate by regime at entry', () => {
+    seedClosedTrade({ symbol: 'BTCUSDT', confidence: 75, pnlPct: 4, outcome: 'TP_HIT', regime: 'RISK_ON' });
+    seedClosedTrade({ symbol: 'BTCUSDT', confidence: 75, pnlPct: 4, outcome: 'TP_HIT', regime: 'RISK_ON' });
+    seedClosedTrade({ symbol: 'BTCUSDT', confidence: 75, pnlPct: -2, outcome: 'SL_HIT', regime: 'CHOPPY' });
+    seedClosedTrade({ symbol: 'BTCUSDT', confidence: 75, pnlPct: 4, outcome: 'TP_HIT' }); // no regime
+
+    const s = getPerformanceSummary('dryrun')!;
+    const riskOn = s.byRegime.find((r) => r.regime === 'RISK_ON')!;
+    expect(riskOn.trades).toBe(2);
+    expect(riskOn.winRate).toBe(1);
+    const choppy = s.byRegime.find((r) => r.regime === 'CHOPPY')!;
+    expect(choppy.trades).toBe(1);
+    expect(choppy.winRate).toBe(0);
+    // rows without regime don't create a bucket
+    expect(s.byRegime).toHaveLength(2);
   });
 
   it('filters by mode', () => {

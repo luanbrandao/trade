@@ -94,6 +94,9 @@ export function getDb(): Database.Database {
 
   addColumnIfMissing(db, 'trades', 'strategy_name', "TEXT NOT NULL DEFAULT 'unknown'");
   addColumnIfMissing(db, 'decisions', 'strategy_name', "TEXT NOT NULL DEFAULT 'unknown'");
+  // Macro regime at decision time (RISK_ON/RISK_OFF/CHOPPY/UNKNOWN). NULL on
+  // rows older than the migration or when the regime fetch failed.
+  addColumnIfMissing(db, 'decisions', 'regime', 'TEXT');
 
   dbInstance = db;
   return db;

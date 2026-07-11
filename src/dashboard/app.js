@@ -81,9 +81,11 @@ function renderRegime(r) {
 function renderCalibration(c) {
   const summary = $('calib-summary');
   const body = $('calib-rows');
+  const regimeBody = $('calib-regime-rows');
   if (!c) {
     summary.textContent = 'no closed trades yet';
     body.innerHTML = '';
+    regimeBody.innerHTML = '';
     return;
   }
   const tight =
@@ -102,6 +104,15 @@ function renderCalibration(c) {
         )
         .join('')
     : '<tr><td class="empty" colspan="3">no executed decisions with confidence data</td></tr>';
+  regimeBody.innerHTML = (c.byRegime && c.byRegime.length)
+    ? c.byRegime
+        .map(
+          (r) => `<tr><td>${r.regime}</td><td>${r.trades}</td>
+          <td class="${r.winRate >= 0.5 ? 'pos' : 'neg'}">${(r.winRate * 100).toFixed(0)}%</td>
+          <td class="${r.avgPnlPct >= 0 ? 'pos' : 'neg'}">${r.avgPnlPct.toFixed(2)}%</td></tr>`,
+        )
+        .join('')
+    : '<tr><td class="empty" colspan="4">no trades with regime data yet</td></tr>';
 }
 
 function renderStats(s, llm, llmInfo, heat) {
@@ -159,14 +170,15 @@ function renderOpen(rows) {
 function renderDecisions(rows) {
   const body = $('decision-rows');
   if (!rows.length) {
-    body.innerHTML = '<tr><td class="empty" colspan="6">no decisions yet</td></tr>';
+    body.innerHTML = '<tr><td class="empty" colspan="7">no decisions yet</td></tr>';
     return;
   }
   body.innerHTML = rows
     .map(
       (d) => `<tr>
       <td>${tsShort(d.ts)}</td><td>${d.symbol}</td><td>${d.action}</td>
-      <td>${d.confidence}%</td><td>${d.executed ? 'EXEC' : 'skip'}</td>
+      <td>${d.confidence}%</td><td class="dim">${d.regime || '—'}</td>
+      <td>${d.executed ? 'EXEC' : 'skip'}</td>
       <td class="dim">${(d.skipReason || d.reason || '').slice(0, 60)}</td></tr>`,
     )
     .join('');

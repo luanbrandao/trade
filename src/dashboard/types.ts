@@ -76,6 +76,7 @@ export interface DecisionView {
   reason: string | null;
   executed: boolean;
   skipReason: string | null;
+  regime: string | null;
 }
 
 export interface LlmCost {
@@ -111,6 +112,13 @@ export interface CalibrationSymbol {
   avgPnlPct: number;
 }
 
+export interface CalibrationRegime {
+  regime: string;
+  trades: number;
+  winRate: number;
+  avgPnlPct: number;
+}
+
 export interface CalibrationView {
   totalClosed: number;
   winRate: number;
@@ -119,6 +127,7 @@ export interface CalibrationView {
   slCount: number;
   byConfidence: CalibrationBucket[];
   bySymbol: CalibrationSymbol[];
+  byRegime: CalibrationRegime[];
 }
 
 export interface HeatView {

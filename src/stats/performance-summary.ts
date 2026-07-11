@@ -13,6 +13,13 @@ export interface ConfidenceBucket {
   winRate: number;
 }
 
+export interface RegimePerf {
+  regime: string;
+  trades: number;
+  winRate: number;
+  avgPnlPct: number;
+}
+
 export interface PerformanceSummary {
   totalClosed: number;
   winRate: number;
@@ -22,6 +29,7 @@ export interface PerformanceSummary {
   slCount: number;
   bySymbol: SymbolPerf[];
   byConfidence: ConfidenceBucket[];
+  byRegime: RegimePerf[];
 }
 
 interface PerfRow {
@@ -33,6 +41,7 @@ interface PerfRow {
   tp_price: number | null;
   avg_price: number;
   side: string;
+  regime: string | null;
 }
 
 /**
@@ -47,7 +56,7 @@ export function getPerformanceSummary(
 ): PerformanceSummary | null {
   const rows = getDb()
     .prepare(
-      `SELECT t.symbol, p.outcome, p.pnl_pct, p.mfe_pct, d.confidence,
+      `SELECT t.symbol, p.outcome, p.pnl_pct, p.mfe_pct, d.confidence, d.regime,
               t.tp_price, t.avg_price, t.side
        FROM postmortems p
        JOIN trades t ON t.id = p.trade_id
@@ -98,6 +107,19 @@ export function getPerformanceSummary(
     })
     .filter((b) => b.trades > 0);
 
+  const byRegimeMap = new Map<string, PerfRow[]>();
+  for (const r of rows) {
+    if (!r.regime) continue;
+    if (!byRegimeMap.has(r.regime)) byRegimeMap.set(r.regime, []);
+    byRegimeMap.get(r.regime)!.push(r);
+  }
+  const byRegime: RegimePerf[] = [...byRegimeMap.entries()].map(([regime, rs]) => ({
+    regime,
+    trades: rs.length,
+    winRate: rs.filter((r) => r.pnl_pct > 0).length / rs.length,
+    avgPnlPct: rs.reduce((s, r) => s + r.pnl_pct, 0) / rs.length,
+  }));
+
   return {
     totalClosed: rows.length,
     winRate: wins / rows.length,
@@ -106,5 +128,6 @@ export function getPerformanceSummary(
     slCount: slRows.length,
     bySymbol,
     byConfidence,
+    byRegime,
   };
 }

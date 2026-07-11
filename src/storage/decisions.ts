@@ -18,6 +18,8 @@ export interface DecisionRecord {
   skipReason: string | null;
   mode: 'dryrun' | 'live' | 'backtest';
   strategyName: string;
+  /** Macro regime at decision time; null/absent when the regime fetch failed. */
+  regime?: string | null;
 }
 
 export function insertDecision(d: DecisionRecord): number {
@@ -27,15 +29,15 @@ export function insertDecision(d: DecisionRecord): number {
       ts, symbol, action, confidence, reason,
       stop_loss_pct, take_profit_pct, time_horizon_minutes,
       price_at_decision, llm_model, llm_input_tokens, llm_output_tokens, llm_cost_usd,
-      executed, skip_reason, mode, strategy_name
+      executed, skip_reason, mode, strategy_name, regime
     ) VALUES (
       @ts, @symbol, @action, @confidence, @reason,
       @stopLossPct, @takeProfitPct, @timeHorizonMinutes,
       @priceAtDecision, @llmModel, @llmInputTokens, @llmOutputTokens, @llmCostUsd,
-      @executed, @skipReason, @mode, @strategyName
+      @executed, @skipReason, @mode, @strategyName, @regime
     )
   `);
-  const result = stmt.run({ ...d, executed: d.executed ? 1 : 0 });
+  const result = stmt.run({ ...d, executed: d.executed ? 1 : 0, regime: d.regime ?? null });
   return Number(result.lastInsertRowid);
 }
 
