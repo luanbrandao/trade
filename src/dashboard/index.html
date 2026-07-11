@@ -36,11 +36,19 @@
       <div id="strategy" class="dim mono"></div>
     </div>
     <div>
-      <div class="label">Δ since start</div>
+      <div class="label">Δ since start <span class="dim">(net of fees)</span></div>
       <div id="delta" class="delta mono">—</div>
       <div id="delta-pct" class="delta-pct mono"></div>
       <div class="label" style="margin-top:20px">Daily gate</div>
       <div id="daily-gate" class="mono">—</div>
+    </div>
+    <div>
+      <div class="label">Macro regime</div>
+      <div id="regime" class="mono">—</div>
+      <div id="regime-detail" class="dim mono"></div>
+      <div class="label" style="margin-top:20px">Confidence floor</div>
+      <div id="conf-floor" class="mono">—</div>
+      <div id="conf-floor-detail" class="dim mono"></div>
     </div>
   </section>
 
@@ -56,6 +64,14 @@
     <table><thead><tr>
       <th>symbol</th><th>side</th><th>qty</th><th>entry</th><th>stop</th><th>target</th><th>now</th><th>uPnL</th><th>uPnL %</th>
     </tr></thead><tbody id="open-rows"></tbody></table>
+  </section>
+
+  <section class="block">
+    <h2>Calibration <span class="dim">· last 50 closed</span></h2>
+    <div id="calib-summary" class="mono dim" style="margin-bottom:12px">no closed trades yet</div>
+    <table><thead><tr>
+      <th>confidence</th><th>trades</th><th>win rate</th>
+    </tr></thead><tbody id="calib-rows"></tbody></table>
   </section>
 
   <section class="block">

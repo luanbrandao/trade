@@ -85,6 +85,47 @@ export interface LlmCost {
   byModel: Record<string, number>;
 }
 
+export interface RegimeView {
+  regime: string;
+  btcTrend: string;
+  btcEma50Slope: number;
+  btcChange30dPct: number;
+  fearGreedIndex: number | null;
+  fearGreedLabel: string | null;
+  baseMinConfidence: number;
+  effectiveMinConfidence: number;
+  maxOpenPositions: number;
+  positionLimit: number;
+}
+
+export interface CalibrationBucket {
+  range: string;
+  trades: number;
+  winRate: number;
+}
+
+export interface CalibrationSymbol {
+  symbol: string;
+  trades: number;
+  winRate: number;
+  avgPnlPct: number;
+}
+
+export interface CalibrationView {
+  totalClosed: number;
+  winRate: number;
+  avgPnlPct: number;
+  slStoppedBeforeTpCount: number;
+  slCount: number;
+  byConfidence: CalibrationBucket[];
+  bySymbol: CalibrationSymbol[];
+}
+
+export interface HeatView {
+  currentPct: number;
+  capPct: number;
+}
+
 export interface DashboardSnapshot {
   loop: LoopStatus;
   stats: StatsSnapshot;
@@ -94,6 +135,9 @@ export interface DashboardSnapshot {
   equityCurve: { ts: number; equity: number }[];
   llmCost: LlmCost;
   llm: { provider: string; model: string };
+  regime: RegimeView | null;
+  calibration: CalibrationView | null;
+  heat: HeatView;
 }
 
 export interface LogLine {

@@ -38,7 +38,7 @@ body { min-width: 720px; }
 
 main { max-width: 1280px; margin: 0 auto; padding: 48px 32px; }
 .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.2em; color: var(--dim); margin-bottom: 8px; }
-.equity-row { display: grid; grid-template-columns: 2fr 1fr; gap: 32px; padding-bottom: 40px; border-bottom: 1px solid var(--rule); }
+.equity-row { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 32px; padding-bottom: 40px; border-bottom: 1px solid var(--rule); }
 .equity { font-size: 84px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
 .delta { font-size: 30px; font-weight: 500; }
 .delta-pct { font-size: 16px; color: var(--dim); margin-top: 4px; }
@@ -73,3 +73,9 @@ td.empty { color: var(--dim); padding: 16px 12px; }
 .settings-form input, .settings-form select { background: #1a1a1a; border: 1px solid var(--rule); color: inherit; font-family: 'JetBrains Mono', monospace; font-size: 12px; padding: 4px 6px; width: 160px; }
 .settings-form label.invalid input, .settings-form label.invalid select { border-color: var(--neg); }
 .settings-actions { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+
+.regime-badge { font-size: 22px; font-weight: 700; letter-spacing: 0.06em; }
+.regime-risk-on { color: var(--pos); }
+.regime-risk-off { color: var(--neg); }
+.regime-choppy { color: #d9a441; }
+.regime-unknown { color: var(--dim); }

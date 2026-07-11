@@ -2,6 +2,14 @@ import { config } from '../config/config';
 import { effectiveSettings } from '../config/effective-settings';
 import { getDb } from '../storage/db';
 import { collectStats } from '../stats/collect';
+import { getPerformanceSummary } from '../stats/performance-summary';
+import { currentPortfolioHeatPct } from '../executor/position-sizer';
+import { detectRegime } from '../strategy/regime';
+import { effectiveMinConfidence, maxPositionsForRegime } from '../strategy/regime-policy';
+import { Regime } from '../strategy/regime';
+import { BinancePublicClient } from '../binance/public-client';
+import { TradeRecord } from '../storage/trades';
+import { log } from '../logger';
 import { PriceCache } from './binance-prices';
 import { collectLlmCost } from './llm-cost';
 import {
@@ -11,9 +19,14 @@ import {
   ClosedTradeView,
   DecisionView,
   LoopStatus,
+  RegimeView,
+  CalibrationView,
+  HeatView,
 } from './types';
 
 export class StatsReader {
+  private pub = new BinancePublicClient();
+
   constructor(private prices: PriceCache = new PriceCache()) {}
 
   lastTickAt(strategyName: string): number | null {
@@ -129,6 +142,62 @@ export class StatsReader {
       },
     };
 
+    const eff = effectiveSettings();
+
+    // Regime + effective confidence floor: explains WHY the bot is holding
+    // (the floor rises +10 in CHOPPY / +5 in UNKNOWN). detectRegime caches
+    // 15 min in-process, so this is one Binance fetch per window.
+    let regime: RegimeView | null = null;
+    try {
+      const r = await detectRegime(this.pub);
+      regime = {
+        regime: r.regime,
+        btcTrend: r.btcTrend,
+        btcEma50Slope: r.btcEma50Slope,
+        btcChange30dPct: r.btcChange30dPct,
+        fearGreedIndex: r.fearGreedIndex,
+        fearGreedLabel: r.fearGreedLabel,
+        baseMinConfidence: eff.minConfidence,
+        effectiveMinConfidence: effectiveMinConfidence(eff.minConfidence, r.regime as Regime),
+        maxOpenPositions: config.trading.maxOpenPositions,
+        positionLimit: maxPositionsForRegime(config.trading.maxOpenPositions, r.regime as Regime),
+      };
+    } catch (err: any) {
+      log.warn('Dashboard regime fetch failed', { err: err.message });
+    }
+
+    let calibration: CalibrationView | null = null;
+    try {
+      calibration = getPerformanceSummary('dryrun');
+    } catch (err: any) {
+      log.warn('Dashboard calibration read failed', { err: err.message });
+    }
+
+    const heatTrades: TradeRecord[] = stats.open.map((t) => ({
+      decisionId: null,
+      ts: t.ts,
+      symbol: t.symbol,
+      side: t.side,
+      qty: t.qty,
+      avgPrice: t.avg_price,
+      quoteQty: t.avg_price * t.qty,
+      binanceOrderId: '',
+      ocoOrderListId: null,
+      tpPrice: t.tp_price,
+      slPrice: t.sl_price,
+      status: 'OPEN',
+      closedTs: null,
+      closedPrice: null,
+      pnlQuote: null,
+      pnlPct: null,
+      mode: 'dryrun',
+      strategyName: t.strategy_name,
+    }));
+    const heat: HeatView = {
+      currentPct: currentPortfolioHeatPct(heatTrades, eff.accountEquityUsd),
+      capPct: eff.maxPortfolioHeatPct,
+    };
+
     return {
       loop: { ...loop, lastTickAt: this.lastTickAt(strategyName) },
       stats: statsSnap,
@@ -137,10 +206,10 @@ export class StatsReader {
       decisions,
       equityCurve: stats.equityCurve,
       llmCost: collectLlmCost(strategyName),
-      llm: (() => {
-        const eff = effectiveSettings();
-        return { provider: eff.llmProvider, model: eff.llmModel };
-      })(),
+      llm: { provider: eff.llmProvider, model: eff.llmModel },
+      regime,
+      calibration,
+      heat,
     };
   }
 }

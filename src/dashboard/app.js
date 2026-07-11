@@ -53,7 +53,58 @@ function kpi(label, value, sub, valueCls) {
   return `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value ${valueCls || ''}">${value}</div>${sub ? `<div class="kpi-sub">${sub}</div>` : ''}</div>`;
 }
 
-function renderStats(s, llm, llmInfo) {
+function renderRegime(r) {
+  const el = $('regime');
+  const detail = $('regime-detail');
+  const floor = $('conf-floor');
+  const floorDetail = $('conf-floor-detail');
+  if (!r) {
+    el.textContent = 'unavailable';
+    el.className = 'mono regime-badge regime-unknown';
+    detail.textContent = '';
+    floor.textContent = '—';
+    floorDetail.textContent = '';
+    return;
+  }
+  el.textContent = r.regime;
+  el.className = `mono regime-badge regime-${r.regime.toLowerCase().replace('_', '-')}`;
+  const fg = r.fearGreedIndex != null ? `F&G ${r.fearGreedIndex} (${r.fearGreedLabel || 'n/a'})` : 'F&G n/a';
+  detail.textContent = `BTC ${r.btcTrend} · 30d ${r.btcChange30dPct.toFixed(1)}% · ${fg}`;
+  const raised = r.effectiveMinConfidence > r.baseMinConfidence;
+  floor.textContent = `${r.effectiveMinConfidence}%`;
+  floor.className = raised ? 'mono neg' : 'mono';
+  floorDetail.textContent = raised
+    ? `base ${r.baseMinConfidence}% +${r.effectiveMinConfidence - r.baseMinConfidence} regime · max positions ${r.positionLimit}/${r.maxOpenPositions}`
+    : `base ${r.baseMinConfidence}% · max positions ${r.positionLimit}/${r.maxOpenPositions}`;
+}
+
+function renderCalibration(c) {
+  const summary = $('calib-summary');
+  const body = $('calib-rows');
+  if (!c) {
+    summary.textContent = 'no closed trades yet';
+    body.innerHTML = '';
+    return;
+  }
+  const tight =
+    c.slCount > 0 && c.slStoppedBeforeTpCount / c.slCount >= 0.3
+      ? ' · ⚠ stops likely too tight'
+      : '';
+  summary.textContent =
+    `${c.totalClosed} trades · WR ${(c.winRate * 100).toFixed(0)}% · avg ${c.avgPnlPct.toFixed(2)}% · ` +
+    `stopped-then-hit-TP ${c.slStoppedBeforeTpCount}/${c.slCount}${tight}`;
+  summary.className = tight ? 'mono neg' : 'mono dim';
+  body.innerHTML = c.byConfidence.length
+    ? c.byConfidence
+        .map(
+          (b) => `<tr><td>${b.range}%</td><td>${b.trades}</td>
+          <td class="${b.winRate >= 0.5 ? 'pos' : 'neg'}">${(b.winRate * 100).toFixed(0)}%</td></tr>`,
+        )
+        .join('')
+    : '<tr><td class="empty" colspan="3">no executed decisions with confidence data</td></tr>';
+}
+
+function renderStats(s, llm, llmInfo, heat) {
   $('equity').textContent = `$${s.equityNow.toFixed(2)}`;
   $('strategy').textContent = `strategy: ${s.strategyName}`;
   const delta = s.equityNow - s.startingEquity;
@@ -75,6 +126,12 @@ function renderStats(s, llm, llmInfo) {
     kpi('Avg holding', `${s.avgHoldingMinutes.toFixed(0)}m`),
     kpi('Avg R/R', s.avgRrRatio.toFixed(2)),
     kpi('Open PnL', fmtUsd(s.openPnlQuote), '', cls(s.openPnlQuote)),
+    kpi(
+      'Portfolio heat',
+      heat ? `${heat.currentPct.toFixed(2)}%` : '—',
+      heat ? `cap ${heat.capPct.toFixed(1)}%` : '',
+      heat && heat.currentPct >= heat.capPct ? 'neg' : '',
+    ),
     kpi('LLM cost', `$${llm.totalUsd.toFixed(4)}`, `${(llm.inputTokens / 1000).toFixed(0)}k in / ${(llm.outputTokens / 1000).toFixed(1)}k out`),
     kpi('LLM model', llmInfo.model, llmInfo.provider),
   ].join('');
@@ -159,7 +216,9 @@ function renderChart(curve) {
 
 function render(snap) {
   renderLoop(snap.loop);
-  renderStats(snap.stats, snap.llmCost, snap.llm);
+  renderStats(snap.stats, snap.llmCost, snap.llm, snap.heat);
+  renderRegime(snap.regime);
+  renderCalibration(snap.calibration);
   renderOpen(snap.openTrades);
   renderDecisions(snap.decisions);
   renderClosed(snap.closedTrades);
