@@ -65,6 +65,7 @@ const ConfigSchema = z.object({
     feePctPerSide: z.coerce.number().min(0).max(1).default(0.1),
     minStopAtrMult: z.coerce.number().min(0).max(5).default(1.0),
     maxOpenPositions: z.coerce.number().int().min(1).default(3),
+    manageOpenPositions: boolFromFlag.default('true'),
   }),
   storage: z.object({
     dbPath: z.string().default('./data/trade.db'),
@@ -151,6 +152,7 @@ function loadConfig(): Config {
       feePctPerSide: process.env.FEE_PCT_PER_SIDE,
       minStopAtrMult: process.env.MIN_STOP_ATR_MULT,
       maxOpenPositions: process.env.MAX_OPEN_POSITIONS,
+      manageOpenPositions: process.env.MANAGE_OPEN_POSITIONS,
     },
     storage: {
       dbPath: process.env.DB_PATH,

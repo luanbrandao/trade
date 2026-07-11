@@ -85,6 +85,14 @@ cooldown check → open-position check               │
   → MARKET order → OCO (TP+SL)                     │
   → persist to SQLite → set cooldown               ┘
 
+open position (MANAGE_OPEN_POSITIONS=true, default):
+  fresh snapshot → LLM re-evaluates with hasOpenPosition=true
+    → SELL (confidence ≥ BASE floor) → close position early
+       · dryrun: close at market price, postmortem MANUAL/LLM_EARLY_EXIT
+       · live: cancel OCO → MARKET sell by qty → postmortem
+    → HOLD → keep waiting for bracket/timeout
+    → BUY → blocked (one position per symbol)
+
 every cycle (live mode):
   closer.runLive() → query Binance order history → match OCO closing fills
     → close trade → write postmortem (outcome + MAE/MFE + classification)
@@ -299,6 +307,7 @@ sudo systemctl enable --now trade-dashboard.service
 | `FEE_PCT_PER_SIDE`        | `0.1`                | Exchange fee % per side. PnL recorded net of fees (Binance spot taker = 0.1). |
 | `MIN_STOP_ATR_MULT`       | `1.0`                | Stops tighter than this × ATR% are widened (or trade skipped if R/R breaks). `0` disables. |
 | `MAX_OPEN_POSITIONS`      | `3`                  | Max concurrent positions. Capped to 1 in RISK_OFF, 2 in CHOPPY.            |
+| `MANAGE_OPEN_POSITIONS`   | `true`               | LLM re-evaluates open positions each cycle and may SELL to exit early. Exits use the base confidence floor (never regime-raised). |
 | `COOLDOWN_MINUTES`        | `30`                 | Min minutes between trades per symbol.                                     |
 | `SYMBOLS`                 | `BTCUSDT,ETHUSDT,SOLUSDT` | csv.                                                                   |
 | `LOOP_INTERVAL_MINUTES`   | `15`                 | Loop tick interval.                                                        |

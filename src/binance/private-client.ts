@@ -101,6 +101,20 @@ export class BinancePrivateClient {
     });
   }
 
+  /** Market order sized in base asset (exact quantity) — used to close positions. */
+  async createMarketOrderByQty(
+    symbol: string,
+    side: 'BUY' | 'SELL',
+    quantity: number,
+  ): Promise<OrderResponse> {
+    return this.signedPost<OrderResponse>('/order', {
+      symbol,
+      side,
+      type: 'MARKET',
+      quantity,
+    });
+  }
+
   async createLimitOrder(
     symbol: string,
     side: 'BUY' | 'SELL',
