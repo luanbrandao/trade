@@ -2,10 +2,15 @@ import { BinancePublicClient, KlineInterval } from '../binance/public-client';
 import { Kline, Ticker24hr } from '../binance/types';
 import { emaState } from '../indicators/ema';
 import { atr } from '../indicators/atr';
-import { MarketSnapshot, PromptContext } from '../llm/prompt';
+import { rsi } from '../indicators/rsi';
+import { supportResistance, relativeVolume } from '../indicators/levels';
+import { MarketSnapshot, PromptContext, TimeframeSummary } from '../llm/prompt';
 import { TradeDecision } from '../llm/schema';
 import { ClaudeClient } from '../llm/claude-client';
 import { mockDecide } from './mock-llm';
+import { classifyRegime, fetchFearGreedHistory, RegimeSnapshot } from '../strategy/regime';
+import { effectiveMinConfidence } from '../strategy/regime-policy';
+import { summarizeTimeframe } from '../strategy/market-data';
 import { log } from '../logger';
 
 export type LlmMode = 'mock' | 'claude';
@@ -24,6 +29,10 @@ export interface BacktestOptions {
   cooldownMinutes: number;
   warmupCandles: number;
   slippagePct: number;
+  /** Exchange fee % per side (Binance spot taker = 0.1). Applied on entry and exit notional. */
+  feePct: number;
+  /** Re-evaluate open positions with the LLM each candle, allowing early SELL exits (mirrors live). */
+  managePositions?: boolean;
 }
 
 export interface SimulatedTrade {
@@ -37,9 +46,10 @@ export interface SimulatedTrade {
   qty: number;
   pnlQuote: number;
   pnlPct: number;
-  outcome: 'TP' | 'SL' | 'TIMEOUT';
+  outcome: 'TP' | 'SL' | 'TIMEOUT' | 'EARLY_EXIT';
   decisionConfidence: number;
   holdMinutes: number;
+  regime?: string;
 }
 
 export interface BacktestResult {
@@ -49,6 +59,7 @@ export interface BacktestResult {
   decisionsTotal: number;
   decisionsExecuted: number;
   totalLlmCostUsd: number;
+  totalFeesQuote: number;
 }
 
 const BINANCE_KLINE_LIMIT = 1000;
@@ -121,49 +132,65 @@ function syntheticTicker(symbol: string, window24: Kline[]): Ticker24hr {
   };
 }
 
-function simulateFill(
-  klines: Kline[],
-  entryIdx: number,
-  entryPrice: number,
-  side: 'BUY' | 'SELL',
-  tpPercent: number,
-  slPercent: number,
-  timeHorizonMs: number,
-  slippagePct: number,
-): { exitIdx: number; exitPrice: number; outcome: 'TP' | 'SL' | 'TIMEOUT' } {
-  const isLong = side === 'BUY';
-  const tpPrice = entryPrice * (1 + (isLong ? tpPercent : -tpPercent) / 100);
-  const slPrice = entryPrice * (1 + (isLong ? -slPercent : slPercent) / 100);
-  const entryTs = klines[entryIdx].openTime;
-  const deadlineTs = entryTs + timeHorizonMs;
-  const exitSlipFrac = slippagePct / 100;
+/** Aggregate klines into a coarser bucket (e.g. 1h → 4h). Last bucket may be partial. */
+export function resampleKlines(klines: Kline[], bucketMs: number): Kline[] {
+  const out: Kline[] = [];
+  let bucket: Kline | null = null;
+  let bucketStart = -1;
 
-  for (let i = entryIdx + 1; i < klines.length; i++) {
-    const k = klines[i];
-    if (k.openTime > deadlineTs) {
-      const fill = isLong ? k.open * (1 - exitSlipFrac) : k.open * (1 + exitSlipFrac);
-      return { exitIdx: i, exitPrice: fill, outcome: 'TIMEOUT' };
-    }
-    if (isLong) {
-      if (k.low <= slPrice) {
-        return { exitIdx: i, exitPrice: slPrice * (1 - exitSlipFrac), outcome: 'SL' };
-      }
-      if (k.high >= tpPrice) {
-        return { exitIdx: i, exitPrice: tpPrice * (1 - exitSlipFrac), outcome: 'TP' };
-      }
-    } else {
-      if (k.high >= slPrice) {
-        return { exitIdx: i, exitPrice: slPrice * (1 + exitSlipFrac), outcome: 'SL' };
-      }
-      if (k.low <= tpPrice) {
-        return { exitIdx: i, exitPrice: tpPrice * (1 + exitSlipFrac), outcome: 'TP' };
-      }
+  for (const k of klines) {
+    const start = Math.floor(k.openTime / bucketMs) * bucketMs;
+    if (start !== bucketStart) {
+      if (bucket) out.push(bucket);
+      bucketStart = start;
+      bucket = { ...k, openTime: start, closeTime: start + bucketMs - 1 };
+    } else if (bucket) {
+      bucket.high = Math.max(bucket.high, k.high);
+      bucket.low = Math.min(bucket.low, k.low);
+      bucket.close = k.close;
+      bucket.volume += k.volume;
+      bucket.trades += k.trades;
+      bucket.closeTime = start + bucketMs - 1;
     }
   }
+  if (bucket) out.push(bucket);
+  return out;
+}
 
-  const last = klines[klines.length - 1];
-  const fallback = isLong ? last.close * (1 - exitSlipFrac) : last.close * (1 + exitSlipFrac);
-  return { exitIdx: klines.length - 1, exitPrice: fallback, outcome: 'TIMEOUT' };
+function utcDayStart(ts: number): number {
+  const d = new Date(ts);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+}
+
+/**
+ * Point-in-time regime lookup: classifies from the BTC daily candles closed
+ * before `ts` plus that day's fear&greed reading. Memoized per UTC day.
+ */
+export function makeRegimeLookup(
+  btcDaily: Kline[],
+  fgHistory: Map<number, number>,
+): (ts: number) => RegimeSnapshot | undefined {
+  const memo = new Map<number, RegimeSnapshot | undefined>();
+  return (ts: number) => {
+    const day = utcDayStart(ts);
+    if (memo.has(day)) return memo.get(day);
+
+    const closes = btcDaily.filter((k) => k.closeTime <= ts).map((k) => k.close);
+    let snap: RegimeSnapshot | undefined;
+    if (closes.length >= 50) {
+      const fg = fgHistory.get(day) ?? null;
+      snap = classifyRegime(closes.slice(-60), fg);
+      snap.source = fg !== null ? 'backtest replay (binance+fng)' : 'backtest replay (binance only)';
+    }
+    memo.set(day, snap);
+    return snap;
+  };
+}
+
+interface FillOutcome {
+  exitIdx: number;
+  exitPrice: number;
+  outcome: 'TP' | 'SL' | 'TIMEOUT' | 'EARLY_EXIT';
 }
 
 export async function runBacktest(opts: BacktestOptions): Promise<BacktestResult> {
@@ -183,16 +210,142 @@ export async function runBacktest(opts: BacktestOptions): Promise<BacktestResult
     throw new Error(`Insufficient klines (${klines.length}) for warmup ${opts.warmupCandles}`);
   }
 
+  // Point-in-time regime data: BTC dailies (with 90d lead for EMA50 warmup) + fear&greed history.
+  let regimeAt: (ts: number) => RegimeSnapshot | undefined = () => undefined;
+  try {
+    const regimeFrom = new Date(opts.from.getTime() - 90 * 86_400_000);
+    const [btcDaily, fgHistory] = await Promise.all([
+      downloadKlines(pub, 'BTCUSDT', '1d', regimeFrom, opts.to),
+      fetchFearGreedHistory(),
+    ]);
+    regimeAt = makeRegimeLookup(btcDaily, fgHistory);
+    log.info('Regime data loaded', { btcDailyCandles: btcDaily.length, fngDays: fgHistory.size });
+  } catch (err: any) {
+    log.warn('Regime data unavailable — backtest runs without macro context', { err: err.message });
+  }
+
   const claude = opts.llmMode === 'claude' ? new ClaudeClient() : null;
   const intervalMs = intervalToMs(opts.interval);
   const cooldownMs = opts.cooldownMinutes * 60_000;
+  const feeFrac = opts.feePct / 100;
+  const exitSlipFrac = opts.slippagePct / 100;
 
   const trades: SimulatedTrade[] = [];
   let lastTradeTs = 0;
   let decisionsTotal = 0;
   let decisionsExecuted = 0;
   let totalLlmCostUsd = 0;
+  let totalFeesQuote = 0;
   let openTradeExitIdx = -1;
+
+  const buildSnapshot = (i: number): MarketSnapshot | null => {
+    const candle = klines[i];
+    const window = klines.slice(Math.max(0, i - opts.emaSlow * 3), i + 1);
+    const closes = window.map((k) => k.close);
+    const ema = emaState(closes, opts.emaFast, opts.emaSlow);
+    if (!ema) return null;
+
+    const window24 = klines.slice(Math.max(0, i - 23), i + 1);
+    const historyToNow = klines.slice(0, i + 1);
+
+    const higherTimeframes: TimeframeSummary[] = [];
+    if (intervalMs < 14_400_000) {
+      const k4h = resampleKlines(historyToNow, 14_400_000);
+      const tf4h = summarizeTimeframe('4h', k4h, opts.emaFast, opts.emaSlow);
+      if (tf4h) higherTimeframes.push(tf4h);
+    }
+    if (intervalMs < 86_400_000) {
+      const k1d = resampleKlines(historyToNow, 86_400_000);
+      const tf1d = summarizeTimeframe('1d', k1d, opts.emaFast, opts.emaSlow);
+      if (tf1d) higherTimeframes.push(tf1d);
+    }
+
+    return {
+      symbol: opts.symbol,
+      currentPrice: candle.close,
+      ticker24h: syntheticTicker(opts.symbol, window24),
+      klines1h: window24,
+      ema,
+      atr: atr(window, 14),
+      rsi14: rsi(closes, 14),
+      relVolume: relativeVolume(window, 20),
+      levels: supportResistance(window, candle.close),
+      higherTimeframes,
+      topBids: [[candle.close.toString(), '1']],
+      topAsks: [[candle.close.toString(), '1']],
+    };
+  };
+
+  const decide = async (
+    snapshot: MarketSnapshot,
+    ctx: PromptContext,
+  ): Promise<TradeDecision | null> => {
+    if (claude) {
+      try {
+        const r = await claude.decide(snapshot, ctx);
+        totalLlmCostUsd += r.usage.costUsd;
+        return r.decision;
+      } catch (err: any) {
+        log.warn('Claude failed mid-backtest', { err: err.message });
+        return null;
+      }
+    }
+    return mockDecide(snapshot, ctx).decision;
+  };
+
+  const simulateTrade = async (
+    entryIdx: number,
+    entryPrice: number,
+    tpPercent: number,
+    slPercent: number,
+    timeHorizonMs: number,
+  ): Promise<FillOutcome> => {
+    const tpPrice = entryPrice * (1 + tpPercent / 100);
+    const slPrice = entryPrice * (1 - slPercent / 100);
+    const deadlineTs = klines[entryIdx].openTime + timeHorizonMs;
+
+    for (let i = entryIdx + 1; i < klines.length; i++) {
+      const k = klines[i];
+      if (k.openTime > deadlineTs) {
+        return { exitIdx: i, exitPrice: k.open * (1 - exitSlipFrac), outcome: 'TIMEOUT' };
+      }
+      // Bracket lives on the exchange and fires intrabar — check before any
+      // end-of-candle management decision. SL first: conservative on candles
+      // that touch both levels.
+      if (k.low <= slPrice) {
+        return { exitIdx: i, exitPrice: slPrice * (1 - exitSlipFrac), outcome: 'SL' };
+      }
+      if (k.high >= tpPrice) {
+        return { exitIdx: i, exitPrice: tpPrice * (1 - exitSlipFrac), outcome: 'TP' };
+      }
+
+      if (opts.managePositions) {
+        const snap = buildSnapshot(i);
+        if (snap) {
+          // Exits use the base floor, not the regime-raised one: a hostile
+          // regime should make it harder to enter, never harder to get out.
+          const ctx: PromptContext = {
+            minConfidence: opts.minConfidence,
+            minRrRatio: opts.minRrRatio,
+            cooldownMinutes: opts.cooldownMinutes,
+            amountUsd: opts.amountUsd,
+            hasOpenPosition: true,
+            regime: regimeAt(k.openTime),
+          };
+          decisionsTotal += 1;
+          const d = await decide(snap, ctx);
+          if (d && d.action === 'SELL' && d.confidence >= opts.minConfidence) {
+            const exitIdx = Math.min(i + 1, klines.length - 1);
+            const rawExit = exitIdx > i ? klines[exitIdx].open : klines[i].close;
+            return { exitIdx, exitPrice: rawExit * (1 - exitSlipFrac), outcome: 'EARLY_EXIT' };
+          }
+        }
+      }
+    }
+
+    const lastIdx = klines.length - 1;
+    return { exitIdx: lastIdx, exitPrice: klines[lastIdx].close * (1 - exitSlipFrac), outcome: 'TIMEOUT' };
+  };
 
   for (let i = opts.warmupCandles; i < klines.length - 1; i++) {
     const candle = klines[i];
@@ -200,51 +353,29 @@ export async function runBacktest(opts: BacktestOptions): Promise<BacktestResult
     if (i <= openTradeExitIdx) continue;
     if (candle.closeTime - lastTradeTs < cooldownMs && lastTradeTs > 0) continue;
 
-    const window = klines.slice(Math.max(0, i - opts.emaSlow * 3), i + 1);
-    const closes = window.map((k) => k.close);
-    const ema = emaState(closes, opts.emaFast, opts.emaSlow);
-    if (!ema) continue;
+    const snapshot = buildSnapshot(i);
+    if (!snapshot) continue;
 
-    if (ema.trend !== 'UP' && ema.cross !== 'GOLDEN') continue;
+    if (snapshot.ema.trend !== 'UP' && snapshot.ema.cross !== 'GOLDEN') continue;
 
-    const window24 = klines.slice(Math.max(0, i - 23), i + 1);
-    const snapshot: MarketSnapshot = {
-      symbol: opts.symbol,
-      currentPrice: candle.close,
-      ticker24h: syntheticTicker(opts.symbol, window24),
-      klines1h: window24,
-      ema,
-      atr: atr(window, 14),
-      topBids: [[candle.close.toString(), '1']],
-      topAsks: [[candle.close.toString(), '1']],
-    };
+    const regime = regimeAt(candle.openTime);
+    const confidenceFloor = effectiveMinConfidence(opts.minConfidence, regime?.regime);
 
     const ctx: PromptContext = {
-      minConfidence: opts.minConfidence,
+      minConfidence: confidenceFloor,
       minRrRatio: opts.minRrRatio,
       cooldownMinutes: opts.cooldownMinutes,
       amountUsd: opts.amountUsd,
       hasOpenPosition: false,
+      regime,
     };
 
     decisionsTotal += 1;
-    let decision: TradeDecision;
-
-    if (claude) {
-      try {
-        const r = await claude.decide(snapshot, ctx);
-        decision = r.decision;
-        totalLlmCostUsd += r.usage.costUsd;
-      } catch (err: any) {
-        log.warn('Claude failed mid-backtest', { i, err: err.message });
-        continue;
-      }
-    } else {
-      decision = mockDecide(snapshot, ctx).decision;
-    }
+    const decision = await decide(snapshot, ctx);
+    if (!decision) continue;
 
     if (decision.action !== 'BUY') continue;
-    if (decision.confidence < opts.minConfidence) continue;
+    if (decision.confidence < confidenceFloor) continue;
     const rr = decision.takeProfitPercent / decision.stopLossPercent;
     if (rr < opts.minRrRatio) continue;
 
@@ -254,19 +385,18 @@ export async function runBacktest(opts: BacktestOptions): Promise<BacktestResult
     const qty = opts.amountUsd / entryPrice;
     const timeHorizonMs = decision.timeHorizonMinutes * 60_000;
 
-    const fill = simulateFill(
-      klines,
+    const fill = await simulateTrade(
       entryIdx,
       entryPrice,
-      'BUY',
       decision.takeProfitPercent,
       decision.stopLossPercent,
       timeHorizonMs,
-      opts.slippagePct,
     );
 
-    const pnlQuote = (fill.exitPrice - entryPrice) * qty;
-    const pnlPct = ((fill.exitPrice - entryPrice) / entryPrice) * 100;
+    const fees = (entryPrice + fill.exitPrice) * qty * feeFrac;
+    totalFeesQuote += fees;
+    const pnlQuote = (fill.exitPrice - entryPrice) * qty - fees;
+    const pnlPct = (pnlQuote / (entryPrice * qty)) * 100;
     const tpPrice = entryPrice * (1 + decision.takeProfitPercent / 100);
     const slPrice = entryPrice * (1 - decision.stopLossPercent / 100);
 
@@ -284,6 +414,7 @@ export async function runBacktest(opts: BacktestOptions): Promise<BacktestResult
       outcome: fill.outcome,
       decisionConfidence: decision.confidence,
       holdMinutes: (klines[fill.exitIdx].openTime - klines[entryIdx].openTime) / 60_000,
+      regime: regime?.regime,
     });
 
     decisionsExecuted += 1;
@@ -298,5 +429,6 @@ export async function runBacktest(opts: BacktestOptions): Promise<BacktestResult
     decisionsTotal,
     decisionsExecuted,
     totalLlmCostUsd,
+    totalFeesQuote,
   };
 }

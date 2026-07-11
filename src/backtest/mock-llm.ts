@@ -30,7 +30,9 @@ export function mockDecide(snap: MarketSnapshot, ctx: PromptContext): MockDecide
     }
   } else if (ema.cross === 'GOLDEN' && change24h > -2) {
     action = 'BUY';
-    confidence = 78;
+    // High conviction: a fresh golden cross is the "textbook setup" that must
+    // still clear the regime-raised confidence floor in CHOPPY (base + 10).
+    confidence = 82;
     reason = `Golden cross detected (EMA9 ${ema.fast.toFixed(2)} > EMA21 ${ema.slow.toFixed(2)}), 24h change ${change24h}%`;
   } else if (ema.trend === 'UP' && change24h > 1) {
     action = 'BUY';
@@ -40,12 +42,18 @@ export function mockDecide(snap: MarketSnapshot, ctx: PromptContext): MockDecide
     reason = `Downtrend with ${change24h}% drop — wait for reversal signal`;
   }
 
+  // Volatility-aware bracket, mirroring what a real model is prompted to do:
+  // stop ~1.5x ATR (clamped to schema bounds), target at the R/R floor.
+  const atrPct = snap.atr !== null ? (snap.atr / snap.currentPrice) * 100 : null;
+  const stopLossPercent = atrPct !== null ? Math.min(8, Math.max(0.8, atrPct * 1.5)) : 2;
+  const takeProfitPercent = Math.min(20, Math.max(stopLossPercent * ctx.minRrRatio, 1));
+
   const decision: TradeDecision = {
     action,
     confidence,
     reason,
-    stopLossPercent: 2,
-    takeProfitPercent: Math.max(4, ctx.minRrRatio * 2),
+    stopLossPercent,
+    takeProfitPercent,
     timeHorizonMinutes: 720,
     keyRisks: [
       'Sudden BTC dump > 3% in 1h',

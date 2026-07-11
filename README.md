@@ -36,7 +36,7 @@ npm run dryrun                    # run strategy loop, log decisions, no orders
 npm run live                      # run strategy loop with real orders (requires I_UNDERSTAND_RISKS=yes)
 npm run once -- --mode dryrun     # one cycle then exit (for cron)
 
-npm run backtest -- --symbol BTCUSDT --from 2025-01-01 --to 2025-04-01 --llm mock --slippage 0.05
+npm run backtest -- --symbol BTCUSDT --from 2025-01-01 --to 2025-04-01 --llm mock --slippage 0.05 --fee 0.1
 npx ts-node src/cli.ts sweep --symbol BTCUSDT --from 2025-01-01 --to 2025-04-01 \
   --param ema-fast --values 5,7,9,11,14 --llm mock
 
@@ -50,7 +50,7 @@ npx ts-node src/cli.ts close-trades --mode live      # detect filled OCOs, write
 ```
 src/
   binance/         # public + private REST clients
-  indicators/      # EMA + ATR
+  indicators/      # EMA + ATR + RSI + S/R swing pivots + relative volume
   llm/             # Claude client, tool definition, prompt, zod schema
   strategy/        # orchestrator + market-data + regime detector
   executor/        # risk manager, position sizer, balance, MARKET, OCO bracket
@@ -67,18 +67,23 @@ src/
 ### Decision flow per symbol
 
 ```
-detectRegime (cached 15min)              ┐
-cooldown check → snapshot (klines+ticker │
-  +book+EMA+ATR) → EMA pre-filter ───────┤
-  → Claude tool use (decide_trade) ──────┤
-  → zod validate                         │
-  → R/R ≥ MIN_RR_RATIO                   │── orchestrator
-  → confidence ≥ MIN_CONFIDENCE          │
-  → position-sizer (fixed | risk | atr)  │
-  → portfolio-heat check                 │
-  → balance check                        │
-  → MARKET order → OCO (TP+SL)           │
-  → persist to SQLite → set cooldown     ┘
+detectRegime (cached 15min)                        ┐
+cooldown check → open-position check               │
+  → position-limit check (regime-aware)            │
+  → snapshot (klines 1h/4h/1d + ticker + book      │
+    + EMA + ATR + RSI + rel-volume + S/R pivots)  │
+  → EMA pre-filter                                 │
+  → performance summary (last 50 postmortems)      │── orchestrator
+  → LLM tool use (decide_trade)                    │
+  → zod validate                                   │
+  → stop ≥ MIN_STOP_ATR_MULT × ATR (widen/reject)  │
+  → R/R ≥ MIN_RR_RATIO                             │
+  → confidence ≥ regime-adjusted MIN_CONFIDENCE    │
+  → position-sizer (fixed | risk | atr)            │
+  → portfolio-heat check                           │
+  → balance check                                  │
+  → MARKET order → OCO (TP+SL)                     │
+  → persist to SQLite → set cooldown               ┘
 
 every cycle (live mode):
   closer.runLive() → query Binance order history → match OCO closing fills
@@ -115,7 +120,25 @@ Each cycle, before per-symbol decisions, the regime detector computes:
 
 Result classified as `RISK_ON | RISK_OFF | CHOPPY | UNKNOWN` and injected into Claude's user prompt. Claude is instructed to weight decisions accordingly (e.g., RISK_OFF biases toward HOLD; CHOPPY tightens confidence thresholds).
 
+Regime also gates the pipeline in code (not just prompt guidance):
+
+- **Confidence floor**: `MIN_CONFIDENCE` is raised +10 in CHOPPY, +5 in UNKNOWN.
+- **Position limit**: `MAX_OPEN_POSITIONS` is capped to 1 in RISK_OFF and 2 in CHOPPY — BTC/ETH/SOL are heavily correlated, so the heat cap alone understates true portfolio risk.
+
 Regime cached for 15 minutes — one fetch per cycle, shared across symbols.
+
+## Decision context (what the LLM sees)
+
+Beyond the 1h snapshot, each prompt includes:
+
+- **Higher timeframes** — 4h and 1d EMA trend + RSI, so 1h entries against the larger trend get flagged.
+- **Support/resistance** — swing-pivot levels computed from 1h candles (closest supports/resistances + period high/low), giving the model real anchors for stops and targets.
+- **RSI(14) + relative volume** — momentum and volume confirmation (last candle vs 20-candle average).
+- **Recent performance** — win rate, avg PnL, per-symbol and per-confidence-bucket stats from the last 50 postmortems, plus a "stopped out but price then reached TP" counter that tells the model when its stops are too tight.
+
+## Stop validation
+
+The executor enforces `MIN_STOP_ATR_MULT` (default 1.0): a stop tighter than 1× ATR sits inside normal noise and gets hit regardless of thesis. Such stops are widened to the ATR floor; if the widened stop no longer satisfies `MIN_RR_RATIO` against the proposed take-profit, the trade is skipped.
 
 ## Postmortems
 
@@ -144,16 +167,23 @@ npm run backtest -- \
   --to 2025-04-01 \
   --llm mock \
   --interval 1h \
-  --slippage 0.05
+  --slippage 0.05 \
+  --fee 0.1
 ```
 
-Mock LLM uses heuristic decisions (~$0 cost). Use `--llm claude` for real Claude calls (expensive — budget accordingly).
+Mock LLM uses heuristic decisions (~$0 cost, ATR-based stops that mirror the prompt's guidance). Use `--llm claude` for real Claude calls (expensive — budget accordingly).
 
-**Slippage** — `--slippage 0.05` applies 0.05% per side (entry + every exit type: TP, SL, TIMEOUT). Recommend 0.05-0.10% for liquid pairs, higher for thin altcoins. Setting `slippage > 0` flips the `executionRealism` dimension of the verdict to passing.
+**Slippage** — `--slippage 0.05` applies 0.05% per side (entry + every exit type: TP, SL, TIMEOUT). Recommend 0.05-0.10% for liquid pairs, higher for thin altcoins.
 
-**Metrics:** win rate, total PnL, profit factor, max drawdown, avg R/R achieved, Sharpe, **year-by-year** breakdown.
+**Fees** — `--fee 0.1` applies 0.1% exchange fee per side (Binance spot taker rate). A round trip costs ~0.2% — material on tight-target strategies; unfeed backtests overstate PnL. Both slippage and fees must be > 0 for the `executionRealism` dimension of the verdict to fully pass.
 
-**Verdict** — Deploy/Refine/Abandon scored across 5 dimensions (sample size, expectancy, risk management, robustness, execution realism). Red flags surfaced (small sample, negative expectancy, suspicious win rate, PF < 1, drawdown > 20%, year-fragile, no slippage).
+**Regime replay** — the backtest downloads BTC 1d history plus the full Fear & Greed archive and computes the macro regime point-in-time at every candle (no look-ahead). The same regime-adjusted confidence floor used live applies during replay, so the backtest validates the system that actually runs.
+
+**Position management** — `--manage-positions` re-evaluates open positions with the LLM every candle and allows early SELL exits, mirroring live behavior. Cheap with `--llm mock`; with `--llm claude` it multiplies API calls — budget accordingly.
+
+**Metrics:** win rate, total PnL (net of fees), profit factor, max drawdown, avg R/R achieved, Sharpe, **year-by-year** breakdown.
+
+**Verdict** — Deploy/Refine/Abandon scored across 5 dimensions (sample size, expectancy, risk management, robustness, execution realism). Red flags surfaced (small sample, negative expectancy, suspicious win rate, PF < 1, drawdown > 20%, year-fragile, no slippage, no fees).
 
 ### Parameter sweep
 
@@ -168,7 +198,7 @@ npx ts-node src/cli.ts sweep \
 
 Output table: `value | trades | win% | pnl% | profit_factor | max_dd% | verdict`. Look for ranges where verdict stays `DEPLOY` and metrics are stable across values — that's a plateau. A single value with great metrics surrounded by ABANDON is curve-fit.
 
-Sweepable params: `ema-fast`, `ema-slow`, `slippage`.
+Sweepable params: `ema-fast`, `ema-slow`, `slippage`, `fee`.
 
 ## Notifications (optional)
 
@@ -264,8 +294,11 @@ sudo systemctl enable --now trade-dashboard.service
 | `ACCOUNT_EQUITY_USD`      | `1000`               | Used by risk/atr sizing + heat cap calc.                                   |
 | `ATR_MULTIPLIER`          | `2.0`                | Stop distance = ATR(14) × multiplier (atr mode).                           |
 | `MAX_PORTFOLIO_HEAT_PCT`  | `6.0`                | Cap total open risk across positions. Skips new BUY if exceeded.           |
-| `MIN_CONFIDENCE`          | `70`                 | Claude decision threshold, 0-100.                                          |
+| `MIN_CONFIDENCE`          | `70`                 | Claude decision threshold, 0-100. Raised +10 in CHOPPY, +5 in UNKNOWN regime. |
 | `MIN_RR_RATIO`            | `2.0`                | Min reward/risk. Enforced in Claude client AND executor.                   |
+| `FEE_PCT_PER_SIDE`        | `0.1`                | Exchange fee % per side. PnL recorded net of fees (Binance spot taker = 0.1). |
+| `MIN_STOP_ATR_MULT`       | `1.0`                | Stops tighter than this × ATR% are widened (or trade skipped if R/R breaks). `0` disables. |
+| `MAX_OPEN_POSITIONS`      | `3`                  | Max concurrent positions. Capped to 1 in RISK_OFF, 2 in CHOPPY.            |
 | `COOLDOWN_MINUTES`        | `30`                 | Min minutes between trades per symbol.                                     |
 | `SYMBOLS`                 | `BTCUSDT,ETHUSDT,SOLUSDT` | csv.                                                                   |
 | `LOOP_INTERVAL_MINUTES`   | `15`                 | Loop tick interval.                                                        |

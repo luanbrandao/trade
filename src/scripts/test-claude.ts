@@ -1,8 +1,7 @@
 import { BinancePublicClient } from '../binance/public-client';
-import { emaState } from '../indicators/ema';
-import { atr } from '../indicators/atr';
 import { ClaudeClient } from '../llm/claude-client';
-import { MarketSnapshot, PromptContext } from '../llm/prompt';
+import { PromptContext } from '../llm/prompt';
+import { fetchSnapshot } from '../strategy/market-data';
 import { config } from '../config/config';
 
 async function main() {
@@ -10,26 +9,8 @@ async function main() {
   const pub = new BinancePublicClient();
 
   console.log(`Fetching market data for ${symbol}...`);
-  const [ticker, klines, book] = await Promise.all([
-    pub.get24hrStats(symbol),
-    pub.getKlines(symbol, '1h', 100),
-    pub.getOrderBook(symbol, 10),
-  ]);
-
-  const closes = klines.map((k) => k.close);
-  const ema = emaState(closes, 9, 21);
-  if (!ema) throw new Error('Insufficient klines for EMA');
-
-  const snapshot: MarketSnapshot = {
-    symbol,
-    currentPrice: closes[closes.length - 1],
-    ticker24h: ticker,
-    klines1h: klines,
-    ema,
-    atr: atr(klines, 14),
-    topBids: book.bids.slice(0, 5),
-    topAsks: book.asks.slice(0, 5),
-  };
+  const snapshot = await fetchSnapshot(pub, symbol);
+  const ema = snapshot.ema;
 
   const ctx: PromptContext = {
     minConfidence: config.trading.minConfidence,

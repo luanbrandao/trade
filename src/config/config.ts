@@ -62,6 +62,9 @@ const ConfigSchema = z.object({
     maxDailyLossPct: z.coerce.number().min(0).max(100).default(3.0),
     maxDailyLosses: z.coerce.number().int().min(1).default(3),
     dryrunMaxHoldHours: z.coerce.number().min(1).default(168),
+    feePctPerSide: z.coerce.number().min(0).max(1).default(0.1),
+    minStopAtrMult: z.coerce.number().min(0).max(5).default(1.0),
+    maxOpenPositions: z.coerce.number().int().min(1).default(3),
   }),
   storage: z.object({
     dbPath: z.string().default('./data/trade.db'),
@@ -145,6 +148,9 @@ function loadConfig(): Config {
       maxDailyLossPct: process.env.MAX_DAILY_LOSS_PCT,
       maxDailyLosses: process.env.MAX_DAILY_LOSSES,
       dryrunMaxHoldHours: process.env.DRYRUN_MAX_HOLD_HOURS,
+      feePctPerSide: process.env.FEE_PCT_PER_SIDE,
+      minStopAtrMult: process.env.MIN_STOP_ATR_MULT,
+      maxOpenPositions: process.env.MAX_OPEN_POSITIONS,
     },
     storage: {
       dbPath: process.env.DB_PATH,

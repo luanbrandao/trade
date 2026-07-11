@@ -210,6 +210,8 @@ program
   .option('--ema-slow <n>', 'slow EMA period', '21')
   .option('--warmup <n>', 'warmup candles before trading', '50')
   .option('--slippage <pct>', 'per-side slippage % (entry + exit). Recommend 0.05-0.1', '0.05')
+  .option('--fee <pct>', 'exchange fee % per side (Binance spot taker = 0.1)', '0.1')
+  .option('--manage-positions', 're-evaluate open positions each candle, allow early exits (mirrors live; expensive with --llm claude)', false)
   .action(async (opts) => {
     if (opts.llm !== 'mock' && opts.llm !== 'claude') {
       log.error('Invalid --llm', { llm: opts.llm });
@@ -227,6 +229,7 @@ program
     }
 
     const slippagePct = parseFloat(opts.slippage);
+    const feePct = parseFloat(opts.fee);
 
     try {
       const result = await runBacktest({
@@ -243,13 +246,18 @@ program
         cooldownMinutes: config.trading.cooldownMinutes,
         warmupCandles: parseInt(opts.warmup, 10),
         slippagePct,
+        feePct,
+        managePositions: Boolean(opts.managePositions),
       });
 
-      const metrics = computeMetrics(result.trades, { slippageTested: slippagePct > 0 });
+      const metrics = computeMetrics(result.trades, {
+        slippageTested: slippagePct > 0,
+        feesTested: feePct > 0,
+      });
       console.log(formatMetrics(metrics, result.symbol));
       console.log(`\nCandles processed: ${result.totalCandles}`);
       console.log(`Decisions made: ${result.decisionsTotal}  Executed: ${result.decisionsExecuted}`);
-      console.log(`Slippage modeled: ${slippagePct}% per side`);
+      console.log(`Slippage modeled: ${slippagePct}% per side  Fees: ${feePct}% per side ($${result.totalFeesQuote.toFixed(2)} total)`);
       if (opts.llm === 'claude') {
         console.log(`LLM cost: $${result.totalLlmCostUsd.toFixed(4)}`);
       }
@@ -266,7 +274,7 @@ program
   .requiredOption('--symbol <symbol>', 'e.g. BTCUSDT')
   .requiredOption('--from <date>', 'YYYY-MM-DD')
   .requiredOption('--to <date>', 'YYYY-MM-DD')
-  .requiredOption('--param <name>', 'ema-fast | ema-slow | slippage')
+  .requiredOption('--param <name>', 'ema-fast | ema-slow | slippage | fee')
   .requiredOption('--values <csv>', 'comma-separated values, e.g. 5,7,9,11,14')
   .option('--llm <mode>', 'mock | claude', 'mock')
   .option('--interval <interval>', '1h|4h|1d', '1h')
@@ -295,11 +303,13 @@ program
         cooldownMinutes: config.trading.cooldownMinutes,
         warmupCandles: parseInt(opts.warmup, 10),
         slippagePct: 0.05,
+        feePct: 0.1,
       };
 
       if (opts.param === 'ema-fast') baseOpts.emaFast = v;
       else if (opts.param === 'ema-slow') baseOpts.emaSlow = v;
       else if (opts.param === 'slippage') baseOpts.slippagePct = v;
+      else if (opts.param === 'fee') baseOpts.feePct = v;
       else {
         log.error('Invalid --param', { param: opts.param });
         process.exit(1);
@@ -307,7 +317,10 @@ program
 
       try {
         const result = await runBacktest(baseOpts);
-        const m = computeMetrics(result.trades, { slippageTested: baseOpts.slippagePct > 0 });
+        const m = computeMetrics(result.trades, {
+          slippageTested: baseOpts.slippagePct > 0,
+          feesTested: baseOpts.feePct > 0,
+        });
         const pf = m.profitFactor === Infinity ? '∞' : m.profitFactor.toFixed(2);
         console.log(
           `${v}\t${m.trades}\t${(m.winRate * 100).toFixed(1)}\t${m.totalPnlPct.toFixed(2)}\t${pf}\t${m.maxDrawdownPct.toFixed(1)}\t${m.verdict.verdict}`,

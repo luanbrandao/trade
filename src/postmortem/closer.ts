@@ -7,6 +7,7 @@ import {
   PostmortemOutcome,
   PostmortemClassification,
 } from '../storage/postmortems';
+import { config } from '../config/config';
 import { log } from '../logger';
 
 export interface CloserResult {
@@ -83,12 +84,14 @@ export class TradeCloser {
     if (!trade.id) return;
 
     const isLong = trade.side === 'BUY';
-    const pnlQuote = isLong
+    // Net of exchange fees on both sides — gross PnL overstates results by
+    // ~2x fee per round trip, which is material on tight-target strategies.
+    const fees = (trade.avgPrice + exitPrice) * trade.qty * (config.trading.feePctPerSide / 100);
+    const grossQuote = isLong
       ? (exitPrice - trade.avgPrice) * trade.qty
       : (trade.avgPrice - exitPrice) * trade.qty;
-    const pnlPct = isLong
-      ? ((exitPrice - trade.avgPrice) / trade.avgPrice) * 100
-      : ((trade.avgPrice - exitPrice) / trade.avgPrice) * 100;
+    const pnlQuote = grossQuote - fees;
+    const pnlPct = (pnlQuote / (trade.avgPrice * trade.qty)) * 100;
     const holdingMinutes = (closedTs - trade.ts) / 60_000;
 
     const tradeStatus: TradeStatus =

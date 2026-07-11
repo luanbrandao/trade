@@ -61,7 +61,7 @@ function emptyVerdict(): VerdictResult {
 
 export function computeMetrics(
   trades: SimulatedTrade[],
-  opts: { slippageTested?: boolean } = {},
+  opts: { slippageTested?: boolean; feesTested?: boolean } = {},
 ): BacktestMetrics {
   if (trades.length === 0) {
     return {
@@ -136,6 +136,7 @@ export function computeMetrics(
     maxDrawdownPct,
     yearByYear,
     slippageTested: opts.slippageTested ?? false,
+    feesTested: opts.feesTested ?? false,
   });
 
   return {
@@ -185,6 +186,7 @@ function computeVerdict(input: {
   maxDrawdownPct: number;
   yearByYear: YearMetric[];
   slippageTested: boolean;
+  feesTested: boolean;
 }): VerdictResult {
   const redFlags: string[] = [];
 
@@ -205,8 +207,9 @@ function computeVerdict(input: {
     redFlags.push(`only ${positiveYears}/${totalYears} years positive`);
   }
 
-  const executionRealism = input.slippageTested ? 100 : 40;
+  const executionRealism = input.slippageTested && input.feesTested ? 100 : input.slippageTested || input.feesTested ? 70 : 40;
   if (!input.slippageTested) redFlags.push('slippage not modeled (set --slippage > 0)');
+  if (!input.feesTested) redFlags.push('exchange fees not modeled (set --fee > 0)');
 
   if (input.profitFactor < 1) redFlags.push(`profit factor ${input.profitFactor.toFixed(2)} < 1`);
   if (input.winRate > 0.9) redFlags.push(`win rate ${(input.winRate * 100).toFixed(0)}% looks too good (possible look-ahead bias)`);

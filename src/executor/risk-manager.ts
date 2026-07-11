@@ -62,6 +62,48 @@ export function validateRrFloor(rrRatio: number, minRrRatio: number): { ok: bool
   return { ok: true };
 }
 
+export interface StopVsAtrResult {
+  ok: boolean;
+  stopLossPercent: number;
+  widened: boolean;
+  reason?: string;
+}
+
+/**
+ * A stop tighter than ~1x ATR sits inside normal noise and gets hit almost
+ * every time regardless of thesis. Widen such stops to minStopAtrMult * ATR%;
+ * if the widened stop no longer satisfies the R/R floor against the given
+ * take-profit, reject the trade instead.
+ */
+export function enforceStopVsAtr(
+  stopLossPercent: number,
+  takeProfitPercent: number,
+  atrPct: number | null,
+  minStopAtrMult: number,
+  minRrRatio: number,
+): StopVsAtrResult {
+  if (atrPct === null || atrPct <= 0 || minStopAtrMult <= 0) {
+    return { ok: true, stopLossPercent, widened: false };
+  }
+
+  const minStopPct = atrPct * minStopAtrMult;
+  if (stopLossPercent >= minStopPct) {
+    return { ok: true, stopLossPercent, widened: false };
+  }
+
+  const widenedRr = takeProfitPercent / minStopPct;
+  if (widenedRr < minRrRatio) {
+    return {
+      ok: false,
+      stopLossPercent,
+      widened: false,
+      reason: `stop ${stopLossPercent.toFixed(2)}% < ${minStopAtrMult}x ATR (${minStopPct.toFixed(2)}%) and widening breaks R/R floor (${widenedRr.toFixed(2)} < ${minRrRatio})`,
+    };
+  }
+
+  return { ok: true, stopLossPercent: minStopPct, widened: true };
+}
+
 export function validateMinNotional(quoteQty: number, filters: SymbolFilters): { ok: boolean; reason?: string } {
   if (filters.minNotional > 0 && quoteQty < filters.minNotional) {
     return {

@@ -14,12 +14,15 @@ import { FillSimulator } from '../paper/fill-simulator';
 import { checkDailyGate } from '../paper/daily-gate';
 import { log } from '../logger';
 import { detectRegime, RegimeSnapshot } from './regime';
+import { effectiveMinConfidence, maxPositionsForRegime } from './regime-policy';
+import { getPerformanceSummary } from '../stats/performance-summary';
 
 export interface SymbolResult {
   symbol: string;
   outcome:
     | 'SKIPPED_COOLDOWN'
     | 'SKIPPED_OPEN_POSITION'
+    | 'SKIPPED_POSITION_LIMIT'
     | 'SKIPPED_EMA'
     | 'SKIPPED_DECISION'
     | 'SKIPPED_DAILY_GATE'
@@ -94,6 +97,27 @@ export class Orchestrator {
       };
     }
 
+    // Regime first (15-min cache, one real fetch per cycle): it gates the
+    // position limit and confidence floor before any per-symbol cost.
+    let regime: RegimeSnapshot | undefined;
+    try {
+      regime = await detectRegime(this.pub);
+    } catch (err: any) {
+      log.warn('Regime fetch failed', { err: err.message });
+    }
+
+    // BTC/ETH/SOL are heavily correlated — heat cap alone treats them as
+    // independent bets, so cap concurrent positions harder in bad regimes.
+    const allOpen = getOpenTrades().filter((t) => t.mode === this.mode);
+    const positionLimit = maxPositionsForRegime(config.trading.maxOpenPositions, regime?.regime);
+    if (allOpen.length >= positionLimit) {
+      return {
+        symbol,
+        outcome: 'SKIPPED_POSITION_LIMIT',
+        reason: `${allOpen.length} open positions >= limit ${positionLimit} (regime ${regime?.regime ?? 'n/a'})`,
+      };
+    }
+
     let snapshot;
     try {
       snapshot = await fetchSnapshot(this.pub, symbol);
@@ -110,20 +134,23 @@ export class Orchestrator {
       };
     }
 
-    let regime: RegimeSnapshot | undefined;
+    const minConfidence = effectiveMinConfidence(config.trading.minConfidence, regime?.regime);
+
+    let performance = null;
     try {
-      regime = await detectRegime(this.pub);
+      performance = getPerformanceSummary(this.mode === 'live' ? 'live' : 'dryrun');
     } catch (err: any) {
-      log.warn('Regime fetch failed', { err: err.message });
+      log.warn('Performance summary failed', { err: err.message });
     }
 
     const ctx: PromptContext = {
-      minConfidence: config.trading.minConfidence,
+      minConfidence,
       minRrRatio: config.trading.minRrRatio,
       cooldownMinutes: config.trading.cooldownMinutes,
       amountUsd: config.trading.amountUsd,
       hasOpenPosition,
       regime,
+      performance,
     };
 
     let llmResult;
@@ -164,13 +191,13 @@ export class Orchestrator {
       };
     }
 
-    if (llmResult.decision.confidence < config.trading.minConfidence) {
-      markDecisionSkipped(decisionId, `confidence ${llmResult.decision.confidence} < ${config.trading.minConfidence}`);
+    if (llmResult.decision.confidence < minConfidence) {
+      markDecisionSkipped(decisionId, `confidence ${llmResult.decision.confidence} < ${minConfidence} (regime-adjusted)`);
       return {
         symbol,
         outcome: 'SKIPPED_DECISION',
         decisionId,
-        reason: `confidence ${llmResult.decision.confidence}% < ${config.trading.minConfidence}%`,
+        reason: `confidence ${llmResult.decision.confidence}% < ${minConfidence}% (regime ${regime?.regime ?? 'n/a'})`,
         costUsd: llmResult.usage.costUsd,
       };
     }

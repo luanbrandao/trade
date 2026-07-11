@@ -2,6 +2,7 @@ import { BinancePrivateClient, SymbolFilters } from '../binance/private-client';
 import { TradeDecision } from '../llm/schema';
 import {
   calcRiskPrices,
+  enforceStopVsAtr,
   floorToStep,
   formatToStep,
   formatToTick,
@@ -12,6 +13,8 @@ import { insertTrade, getOpenTrades, TradeRecord, TradeStatus } from '../storage
 import { setCooldown } from '../storage/cooldowns';
 import { sizePosition, checkHeatCap, SizingMode } from './position-sizer';
 import { config } from '../config/config';
+import { Notifier } from '../notifier';
+import { log } from '../logger';
 
 export type ExecutionMode = 'dryrun' | 'live' | 'backtest';
 
@@ -36,14 +39,35 @@ export interface ExecutionResult {
 }
 
 export class TradeExecutor {
+  private notifier = new Notifier();
+
   constructor(private priv: BinancePrivateClient | null) {}
 
   async execute(input: ExecutionInput): Promise<ExecutionResult> {
-    const { decision } = input;
-
-    if (decision.action === 'HOLD') {
+    if (input.decision.action === 'HOLD') {
       return { status: 'SKIPPED', reason: 'HOLD decision' };
     }
+
+    // Never trade with a stop inside ATR noise: widen it (or skip if the
+    // widened stop can no longer satisfy the R/R floor).
+    const atrPct =
+      input.atrAbsolute && input.currentPrice > 0
+        ? (input.atrAbsolute / input.currentPrice) * 100
+        : null;
+    const stopCheck = enforceStopVsAtr(
+      input.decision.stopLossPercent,
+      input.decision.takeProfitPercent,
+      atrPct,
+      config.trading.minStopAtrMult,
+      input.minRrRatio,
+    );
+    if (!stopCheck.ok) {
+      return { status: 'SKIPPED', reason: stopCheck.reason };
+    }
+    const decision: TradeDecision = stopCheck.widened
+      ? { ...input.decision, stopLossPercent: stopCheck.stopLossPercent }
+      : input.decision;
+    input = { ...input, decision };
 
     const rr = decision.takeProfitPercent / decision.stopLossPercent;
     const rrCheck = validateRrFloor(rr, input.minRrRatio);
@@ -188,7 +212,8 @@ export class TradeExecutor {
       ocoOrderListId = String(oco.orderListId);
     } catch (err: any) {
       const msg = err.response?.data?.msg ?? err.message;
-      console.warn(`OCO failed (${msg}) — falling back to LIMIT TP only`);
+      log.warn(`OCO failed (${msg}) — falling back to LIMIT TP only`, { symbol });
+      let fallbackNote = 'LIMIT TP placed, NO STOP LOSS — set one manually now';
       try {
         await priv.createLimitOrder(
           symbol,
@@ -198,8 +223,27 @@ export class TradeExecutor {
         );
       } catch (tpErr: any) {
         const tpMsg = tpErr.response?.data?.msg ?? tpErr.message;
-        console.error(`LIMIT TP fallback also failed (${tpMsg}) — position is unprotected, configure manually`);
+        log.error(`LIMIT TP fallback also failed (${tpMsg}) — position is unprotected, configure manually`, { symbol });
+        fallbackNote = `LIMIT TP also failed (${tpMsg}) — position FULLY UNPROTECTED`;
       }
+      // A live position without its bracket is the worst state this bot can
+      // be in; page the operator instead of only logging.
+      await this.notifier
+        .notify({
+          event: 'error',
+          title: `⚠ OCO failed on ${symbol}`,
+          body: fallbackNote,
+          fields: {
+            symbol,
+            side,
+            qty: executedQty,
+            entry: fillPrice,
+            intendedTp: risk.takeProfitPrice,
+            intendedSl: risk.stopPrice,
+            ocoError: msg,
+          },
+        })
+        .catch(() => {});
     }
 
     const record: TradeRecord = {
